@@ -1,0 +1,24 @@
+# De acá se ejecuta el emulador con la UI.
+# Requiere cpu.py, assembler.py y disassembler.py
+
+from cpu import CPU, Memory   # Carga la CPU y memoria (clases en archivo aparte cpu.py)
+from ui import EmulatorUI     # ui.py, esta a su vez carga assembler.py y disassembler.py
+from timer import Timer  # o donde tengas definida la clase
+import tkinter as tk
+
+mem = Memory()
+cpu = CPU(mem)
+
+# This timer generates an interruption signal. It can be disabled with freq_hz=0
+timer = Timer(freq_hz=60)
+
+root = tk.Tk()
+
+# Creates user interface and connects everything
+ui = EmulatorUI(root, cpu, mem, timer)
+
+# Set UI window title
+root.title("Custom 8-bit Architecture Emulator [v1.0]")
+
+# Run UI loop
+root.mainloop()

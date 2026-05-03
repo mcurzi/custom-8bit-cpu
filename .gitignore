@@ -1,0 +1,22 @@
+# Python - Archivos temporales de ejecución
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Notas y testeos personales
+cli_debugger.py
+cpu_asm_debug.py
+
+# Carpetas de sistema
+.DS_Store
+.vscode/
+.idea/
+
+# Ignorar archivos específicos dentro de Docs:
+Docs/borradores.txt
+
+
+# Ignorar TODO el contenido de una subcarpeta:
+Notas/
+Tests/
