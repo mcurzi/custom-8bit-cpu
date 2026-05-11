@@ -36,10 +36,10 @@ class CPU:
         self.C = 0
         self.D = 0
 
-        self.SP = 0x6000 # Stack pointer. El stack usa memoria justo antes del framebuffer ($6000). Va hacia atras, por eso no la pisa.
+        self.SP = 0xF000  # Stack pointer. El stack usa memoria justo antes del framebuffer ($6000). Va hacia atras, por eso no la pisa.
 
         # Program counter inicia siempre en 0x100. El Z80 hace algo asi pero en 0x0000
-        self.PC = 0x100   # Acá se debe cargar el programa. Queda $0000-$00FF libre para posible uso futuro
+        self.PC = 0x0000   # Program counter, el reset lo ubica en $00, acá debe cargarse la primera instruccion
 
         # Leer vector de reset para ubicar el PC (6502 style)
         # addr = 0xFFFC
@@ -146,12 +146,12 @@ class CPU:
     
     #Stack helpers
     def push8(self, val):
-        self.SP = (self.SP - 1) & 0xFFFF
+        self.SP = (self.SP - 1) & 0xFFFF # Pre-decremento: El puntero se mueve ANTES de escribir.
         self.memory.write(self.SP, val & 0xFF)
 
     def pull8(self):
         val = self.memory.read(self.SP)
-        self.SP = (self.SP + 1) & 0xFFFF
+        self.SP = (self.SP + 1) & 0xFFFF # Post-incremento, despues de leer
         return val
         
     def push16(self, val):
@@ -250,12 +250,12 @@ class CPU:
         # Primero chequeo de interrupciones
         if self.nmi_pending:        # Una NMI se ejecuta siempre, tiene prioridad
             self.nmi_pending = False
-            self.handle_interrupt(0xFFFA)
+            self.handle_interrupt(0xFFFA) # Vector de NMI, se debe definir la direccion a donde apunta en el codigo ASM
             return 7  # ciclos aprox
 
         elif self.irq_pending and not self.I:  # Una IRQ solo se ejecuta cuando I flag es 0 y tiene menos prioridad que NMI.
             self.irq_pending = False
-            self.handle_interrupt(0xFFFC)
+            self.handle_interrupt(0xFFFC) # Vector de IRQ
             return 7
 
         # Fetch-Execute: Avanza una instrucción completa y actualiza los ciclos
@@ -646,6 +646,12 @@ class CPU:
         elif aaa == 7:
             if bbb == 0:  # NOP (No Operación)
                 cycles = 1  # El NOP no hace nada, solo consume 1 ciclo
+
+            elif bbb == 1:  # LSP, load stack pointer
+                val = self.read16(self.PC)
+                self.PC += 2
+                self.SP = val
+                cycles = 3
 
             elif bbb == 2:  # HLT (Halt, pone la CPU en un 'bucle infinito', pero sin bloquear python)
                 self.running = False

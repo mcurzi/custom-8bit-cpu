@@ -88,7 +88,7 @@ Special operations and register manipulation.
 *   **INC/DEC (AAA=001/010)**: Increment/Decrement A, B, C, D, or the 16-bit DC pair.
 *   **SHIFT/ROTATE (AAA=011)**: SHL, SHR, ROL, ROR on A or B.
 *   **STACK (AAA=110)**: PUSH/PULL for A, B, DC, or Flags.
-*   **SYS (AAA=111)**: NOP, HLT.
+*   **SYS (AAA=111)**: NOP, LSP, HLT.
 
 ---
 
@@ -115,9 +115,8 @@ The CPU maintains 5 status flags:
 ## 💾 Memory Map
 | Range | Function |
 | :--- | :--- |
-| `$0000 - $00FF` | System reserved / Fast pointers (Zero-page) |
-| `$0100 - $5BFF` | RAM + Program Space |
-| `$5C00 - $5DFF` | Memory-mapped I/O |
-| `$5E00 - $5FFF` | Stack Space (Descending) |
-| `$6000 - $FFFF` | **Graphics Framebuffer** (256x160 px, 1bpp) |
+| `$0000 - $5FFF` | General purpose RAM  |
+| `$6000 - $BFFF` |  **Graphics Framebuffer** (256x192 px, 2bpp)  |
+| `$C000 - $EFFF` | System RAM (stack, I/O, future runtime data) |
+| `$F000 - $FFFF` | System area (future boot and system code, vectors |
 

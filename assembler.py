@@ -81,7 +81,7 @@ SPECIAL_OPS = {
     "PSH": 60,
     "PLL": 61,
     "NOP": 70,
-    "BRK": 71,
+    "LSP": 71,
     "HLT": 72
 }
 
@@ -207,7 +207,7 @@ class Assembler:
     # PRIMERA PASADA
     def first_pass(self, lines):
         # first_pass solo calcula tamaños y labels, usa el contador PC como temporal
-        pc = 0x0100 #inicio por default, si hay directiva .org se sobreescribe
+        pc = 0x0000 #inicio por default, si hay directiva .org se sobreescribe
 
         for line in lines:
             line = clean_line(line)
@@ -215,8 +215,9 @@ class Assembler:
                 continue
 
             if line.startswith("."):
-                parts = line.split()
+                parts = line.split(maxsplit=1)  # solo divide en directiva y resto
                 directive = parts[0]
+                parts[1] = parts[1].replace(" ", "")
                 if directive == ".org":
                     pc = parse_number(parts[1])
                     continue
@@ -266,8 +267,9 @@ class Assembler:
                 continue
 
             if line.startswith("."):
-                parts = line.split()
+                parts = line.split(maxsplit=1)
                 directive = parts[0]
+                parts[1] = parts[1].replace(" ", "")
                 if directive == ".org":              # Si se usa .byte o .word, siempre usar .org antes, sino graba en 0x0100 por default
                     addr = parse_number(parts[1])
                     self.start_segment(addr)
@@ -378,6 +380,7 @@ class Assembler:
         if instr in SPECIAL_OPS:
             aaa = SPECIAL_OPS[instr]
             bbb = 0
+            value = None
 
             if operand:
                 operand = operand.strip().upper()
@@ -418,6 +421,15 @@ class Assembler:
             elif aaa == 70: # NOP
                 aaa = 7
                 bbb = 0
+            elif aaa == 71: # LSP, load stack pointer
+                if operand.startswith("#"):
+                    aaa = 7
+                    bbb = 1
+                    value = self.resolve_value(operand[1:])
+                    size = 2
+                else:
+                    raise Exception(f"{instr} sólo soporta modo inmediato")
+
             elif aaa == 72: # HLT
                 aaa = 7
                 bbb = 2
@@ -434,6 +446,9 @@ class Assembler:
             opcode = build_opcode(aaa, bbb, 3)
             self.emit(opcode)
 
+            if value is not None:
+                self.emit_word(value, size)
+
             return
 
         raise Exception("Instrucción desconocida: " + instr)
@@ -441,7 +456,7 @@ class Assembler:
     # EMITIR BYTES
     def emit(self, byte):
         if self.current_segment is None:
-            self.start_segment(0x0100) # Si no hay segmentos creados con .org, carga en 0x100 por defecto
+            self.start_segment(0x0000) # Si no hay segmentos creados con .org, carga en 0x0000 por defecto
         self.current_segment.append(byte & 0xFF)
         self.pc += 1
 

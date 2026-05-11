@@ -6,7 +6,7 @@ A custom 8-bit CPU architecture and emulator built in Python. A hands-on impleme
   <img src="demo.gif" width="650">
 </p>
 
-*Emulated execution at 1 MHz clock*
+*Emulated execution at 1.2 MHz clock*
 
 ---
 

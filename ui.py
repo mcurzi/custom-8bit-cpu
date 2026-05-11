@@ -14,22 +14,27 @@ class EmulatorUI:
         self.cpu = cpu
         self.memory = memory
         self.timer = timer     # Timer externo para generar interrupcipnes
+        self.use_nmi = False   # Con False, el timer se "conecta" las señal de IRQ, con True a NMI
 
-        # Reloj que hace correr el CPU a 1MHz
-        self.cpu_hz = 1000000
+        # Reloj que hace correr el CPU a 1.2MHz
+        self.cpu_hz = 1200000
         self.seconds_per_cycle = 1.0 / self.cpu_hz
-        self.cycles_per_batch = 2000
+        self.cycles_per_batch = 20000  # hace batches de esta cantidad de ciclos, luego chequea el tiempo transcurrido y ajusta velocidad
+        
+        self.root.bind("<Key>", self.on_key_press) # Escuchar teclado
 
         self.program_loaded = False
+
+        # Variables del framebuffer
         self.scale = 3  # para la pantalla: 3 pixeles por "pixel"
-        self.prev_screen = [0] * (256 * 160)  # guarda el estado anterior de cada "pixel"
+        self.prev_screen = [0] * (128 * 192)  # guarda el estado anterior de cada byte (2 pixeles). Esto evita redibujar toda la pantalla.
 
         ### Frame izquierdo (editor + botones)
         self.left_frame = tk.Frame(root)
-        self.left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True) #el Text se estira verticalmente para llenar el frame.
+        self.left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True) # el Text se estira verticalmente para llenar el frame.
 
         # Editor ASM arriba
-        self.editor = tk.Text(self.left_frame, height=30, width=60)
+        self.editor = tk.Text(self.left_frame, height=40, width=80)
         self.editor.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
         # Botones
@@ -47,10 +52,29 @@ class EmulatorUI:
         self.canvas = tk.Canvas(
             self.right_frame,
             width=256 * self.scale,
-            height=160 * self.scale,
+            height=192 * self.scale,
             bg="black"
         )
         self.canvas.pack(side=tk.TOP)
+
+        # Este bloque crea la grilla de pixeles una sola vez, para optimizar. Después es solo cambiar colores
+        self.screen_rects = []  # Matriz 2D con el id interno de cada rectangulo ("pixel")
+
+        for y in range(192):
+            row = []
+
+            for x in range(256):
+                rect = self.canvas.create_rectangle(
+                    x * self.scale,
+                    y * self.scale,
+                    (x + 1) * self.scale,
+                    (y + 1) * self.scale,
+                    fill="black",
+                    outline="black"
+                )
+                row.append(rect)
+
+            self.screen_rects.append(row)
 
         # BOTTOM: CONTENEDOR HORIZONTAL
         self.bottom_frame = tk.Frame(self.right_frame)
@@ -117,10 +141,12 @@ class EmulatorUI:
 
         if self.timer.state:    # si hay una señal pendiente del timer
             self.timer.state = False
-            self.cpu.request_irq()   # En este caso, el timer esta "cableado" al IRQ.
-            # Generar flanco de NMI. Comentando la linea anterior y activando las 2 siguientes, el timer envia NMIs.
-            # self.cpu.set_nmi_line(True)  # NMI dispara en la transición de FALSE a TRUE (flanco ascendente)
-            # self.cpu.set_nmi_line(False) # Se pone en FALSE para "armar" le proximo flanco, si viene de un TRUE anterior no se dispara.
+
+            if self.use_nmi:
+                self.cpu.set_nmi_line(True)  # NMI dispara en la transición de FALSE a TRUE (flanco ascendente)
+                self.cpu.set_nmi_line(False)  # Se pone en FALSE para "armar" le proximo flanco, si viene de un TRUE anterior no se dispara.
+            else:
+                self.cpu.request_irq()
         return c
 
     # Boton Run
@@ -151,8 +177,10 @@ class EmulatorUI:
         if expected > elapsed:
             time.sleep(expected - elapsed)  # frenar si vamos demasiado rápido
 
+
         self.update_views()  # refrescar UI
-        self.root.after(1, self.run_loop)  # reprogramar próximo ciclo no bloquea UI, da lugar para pescar interrupcones)
+        # reprogramar próximo ciclo sin bloquear UI (da lugar para pescar interrupcones)
+        self.root.after(16, self.run_loop) # 16 es aprox 60 veces por segundo, es la velocidad a la que se va a actualizar la UI.
 
     # Boton Step
     def step(self):
@@ -192,13 +220,19 @@ class EmulatorUI:
 # Boton Reset
     def reset(self):
         # limpiar memoria
-        self.memory.mem = [0] * 0x10000
+        self.memory.mem[:] = [0] * 0x10000
         # reiniciar CPU
         self.cpu.reset()
-        # resetear buffer de pantalla
-        self.prev_screen = [0] * (256 * 160)
-        # limpiar canvas
-        self.canvas.delete("all")
+        # resetear "shadow buffer" de pantalla
+        self.prev_screen = [0] * (128 * 192)
+        # limpiar canvas, pero sin destruirlo
+        for y in range(192):
+            for x in range(256):
+                self.canvas.itemconfig(
+                    self.screen_rects[y][x],
+                    fill="black",
+                    outline="black"
+                )
         # reconstruir visor de memoria
         self.build_memory_view()
         # marcar que no hay programa cargado y que frenar el CPU
@@ -237,56 +271,72 @@ class EmulatorUI:
 
 # Pantalla
     def update_screen(self):
-        #self.canvas.delete("all")
         base = 0x6000
 
-        for y in range(160):
-            for x in range(256):
-                addr = base + y * 256 + x
-                val = self.memory.read(addr)
-                
-                idx = y * 256 + x
+        # Paleta de 16 colores tipo CGA/Atari
+        PALETTE_16 = {
+            0: "black", 1: "navy", 2: "green", 3: "teal",
+            4: "maroon", 5: "purple", 6: "olive", 7: "silver",
+            8: "gray", 9: "blue", 10: "lime", 11: "cyan",
+            12: "red", 13: "magenta", 14: "yellow", 15: "white"
+        }
 
-                # solo si cambió. Esto es mas rapido que dibujar toda la pantalla de vuelta
+        # Ahora recorremos por byte. Cada fila de 256 píxeles ocupa 128 bytes.
+        for y in range(192):
+            for x_byte in range(128):
+                addr = base + (y * 128) + x_byte
+                val = self.memory.read(addr)
+
+                # El índice de cambios ahora es por dirección de memoria
+                idx = y * 128 + x_byte
+
                 if val != self.prev_screen[idx]:
                     self.prev_screen[idx] = val
-                
-                    # elegir color
-                    if val == 0:
-                        color = "black"
-                    else:
-                        # color = f"#{val:02X}{val:02X}{val:02X}"  # version original en escala de grises
-                        # Color RGB a partir de un numero de 8 bits:
-                        color = bits8_a_rgb(val)
 
-                    # dibujar pixel (con escala)
-                    self.canvas.create_rectangle(
-                        x * self.scale,
-                        y * self.scale,
-                        (x + 1) * self.scale,
-                        (y + 1) * self.scale,
-                        fill=color,
-                        outline=color
-                    )
+                    # Extraemos los dos píxeles del byte (4 bits cada uno)
+                    # Píxel A (bits 7-4), Píxel B (bits 3-0)
+                    píxeles = [
+                        (val >> 4) & 0x0F, # Izquierdo
+                        val & 0x0F         # Derecho
+                    ]
 
-# Nota sobre color: tkinter usa #RRGGBB. Lo que hace la linea "color = ..."
-# Es asignar el valor del mismo byte de la memoria 3 veces, uno para cada color
-# Eso genera basicamente una escala de grises de #000000 a #FFFFFF (blanco)
-# si se quiere uan escala de color puntal se puede editar eso.
+                    for i, color_idx in enumerate(píxeles):
+                        x_real = (x_byte * 2) + i
+                        color = PALETTE_16[color_idx]
+
+                        self.canvas.itemconfig(
+                            self.screen_rects[y][x_real],
+                            fill=color,
+                            outline=color
+                        )
+
+    def on_key_press(self, event):
+        # Obtiene el código ASCII de la tecla
+        char_code = ord(event.char) if len(event.char) == 1 else 0
+        
+        if char_code > 0:
+            # Escribe el ASCII en RAM 0xC001
+            self.memory.write(0xC001, char_code)
+            
+            #Pone el bit 7 en 1 ($80) en el registro de STATUS de 0xC000
+            self.memory.write(0xC000, 0x80)
+            
+            # Activar si se quiere enviar interrupción, sino de usa por polling en el código ASM
+            # self.cpu.request_irq()
 
 
 # Cargar el programa
     def load_program(self):
 
         # reset
-        self.memory.mem = [0] * 0x10000
+        self.memory.mem[:] = [0] * 0x10000 # alponer [:], resetea el contenido de la lista sin reemplazar la lista en sí.
         self.cpu.__init__(self.memory)
 
         #Ensamblar codigo
         code = self.editor.get("1.0", tk.END)
         segments = assemble(code)
 
-        # cargar programa en memoria (direccion x0100)
+        # cargar programa en memoria
         for addr, data in segments:
             for i, byte in enumerate(data):
                 self.memory.write(addr + i, byte)
@@ -305,16 +355,6 @@ class EmulatorUI:
         #    print(f"{self.memory.read(i):02X}", end=" ", flush=True)
             # El flush manda el texto inmediatamentew a la salida, sin esperar que se llene el buffer
  
-# Funcion para convertir 8 bits al formato RGB
-def bits8_a_rgb(valor):
-    r3 = (valor >> 5) & 0b11
-    g3 = (valor >> 2) & 0b111
-    b2 = valor & 0b111
 
-    # Escalar de vuelta a 0–255
-    r = int(r3 * 255 / 3)
-    g = int(g3 * 255 / 7)
-    b = int(b2 * 255 / 7)
-    return f"#{r:02X}{g:02X}{b:02X}"  # Formatea r, g y b para que queden los hex #RRGGBB
 
 

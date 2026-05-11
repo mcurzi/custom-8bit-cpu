@@ -1,26 +1,25 @@
 ;;; Test Load/Store/Move
-ldb #$20
-stb $03
+ldb #$1F    ; imm
+stb $83     ; abs
 stb $B3
-ldc #$02
-stc $03+b
-lda #$10
-sta $20
-ldb ($03)
-lda #$A0
+ldc #$A2
+stc $83+b   ; abs+B
+lda #$C0
+sta $B0
+ldb ($83)   ; (ptr)
 ldd #$02
-sta [DC]
-sta ($03)+b
+sta [DC]    ; DC pointer: adress $02A2
+sta ($83)+b ; (ptr)+B: $001F + #$1B = $003A
 mov a,b
 mov a,c
 ldb #$BB
 mov b,c
 mov b,a
-ldc $03
+ldc $12    ; #$35
 mov c,a
 mov c,b
 mov a,d
-ldd $30
-std [DC+B]
+ldd $2B    ; #$17
+std [DC+B] ; DC pointer + B offset: $1735 + #$35 = $176A
 mov d,a
 hlt

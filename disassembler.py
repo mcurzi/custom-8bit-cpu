@@ -157,11 +157,13 @@ def disassemble_at(memory, addr):
         elif aaa == 7: # System
             if bbb == 0:
                 mnemonic = "NOP"
+                size = 1
             elif bbb == 1:
-                mnemonic = "BRK"
+                mnemonic = "LSP"
+                size = 3
             elif bbb == 2:
                 mnemonic = "HLT"
-            size = 1
+                size = 1
 
     ### BYTES STRING
     if size == 1:

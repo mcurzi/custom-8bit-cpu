@@ -1,29 +1,45 @@
-;;; Tests IRQs by drawing pixels at 60hz (timer frequency can be changed in main.py)
+;;; Tests framebuffer and IRQs by drawing pixels at 60hz
 
-; Main code chunk is in 0x0100, this is where PC starts
-.org $0100
+; Main code/program is in 0x0000, this is where PC starts
+.org $0000
     CLI       ; clear interrupt flag to accept IRQs
-    CLR B     ; clear/initialize registers
+    LDA #$DD  ; initialize registers
+    LDB #$BB
     CLR C
-    LDD #$C0
+    LDD #$A0
 
 ; Empty loop, just running CPU while receiving
 ; interruptions from an external timer at 60hz.
 LOOP:
+    CPC #$FF
+    BRA NC,end  ; branch if not minus (No Carry flag)
     BRA LOOP
+
+end:
+    HLT
 
 ; IRQ subroutine
 .org $0200
 IRQ:
-    LDA #$90
-    STA $9000+C
-    LDA #$60
-    STA $A000+C
-    STB $B000+C
-    STB [DC+B]   ; DC pointer, indexed with B
+    STA $8000+C
+    STB $9000+C
+    PSH A
+    JSR UN,rep_color
+    STA [DC]   ; DC pointer
     INC C
-    INC B
+    PLL A
     RTI
+
+rep_color:
+    MOV C,A
+    AND #$0F
+    STA $0100 ; sabes low nibble
+    SHL A     ; shift low nibble to high nibble
+    SHL A
+    SHL A
+    SHL A
+    ORA $0100 ; restores low nibble
+    RET
 
 ; IRQ vector address
 .org $FFFC
