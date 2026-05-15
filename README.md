@@ -1,33 +1,20 @@
 # 8-bit CPU Emulator
 
-A custom 8-bit CPU architecture and emulator built in Python. A hands-on implementation of instruction set design, memory-mapped I/O, and low-level execution logic.
+A fully custom 8-bit CPU architecture designed and implemented from scratch in Python, including:
+
+- Custom ISA & opcode encoding
+- Interrupt handling
+- Assembler & disassembler
+- Memory-mapped graphics
+- Real-time debugger GUI
+- Step-by-step execution
+- Examples in assembly code
 
 <p align="center">
   <img src="demo.gif" width="650">
 </p>
 
-*Emulated execution at 1.2 MHz clock*
-
----
-
-## Overview
-
-This emulator implements a fully custom 8-bit instruction set architecture (ISA).
-
-* **Architecture:** Register-based execution model.
-* **Instruction Set:** Custom 8-bit opcode format (**AAA BBB CC**).
-* **Graphics:** Built-in framebuffer (memory-mapped, 256 × 160).
-* **Full Toolchain:** Custom but familiar assembly language, integrated assembler, and disassembler.
-* **Interface:** Tkinter-based GUI for real-time debugging.
-
-## Project Structure
-
-* `cpu.py`: CPU core & Memory bus.
-* `assembler.py`: Two-pass assembler.
-* `disassembler.py`: Generates a disassembly of next instruction.
-* `timer.py`: Simple timer to generate IRQ/NMI signals.
-* `ui.py`: Tkinter dashboard & Framebuffer.
-* `main.py`: Application entry point.
+*Emulated execution at ~1.2 MHz, framebuffer at ~60 fps (GIF capture has way less fps)*
 
 ---
 
@@ -75,24 +62,25 @@ Operations using **A** as accumulator: **ADC, SBB, AND, ORA, XOR, CMP, CPB, CPC*
 
 | Range | Function |
 | :--- | :--- |
-| `0x0000 - 0x00FF` | System Reserved (Zero Page) |
-| `0x0100 - 0x5FFF` | **User RAM & Program** (Stack grows down from $6000) |
-| `0x6000 - 0xFFFF` | **Framebuffer** (256 × 160 px, 1bpp) |
+| `$0000 - $5FFF` | General purpose RAM  |
+| `$6000 - $BFFF` |  **Graphics Framebuffer** (256x192 px, 2bpp)  |
+| `$C000 - $EFFF` | System RAM (stack, I/O, future runtime data) |
+| `$F000 - $FFFF` | System area (future boot and system code, vectors) |
 
 ---
 
 ## Example Program
 ```assembly
-.org $0100
+.org $0000
     CLI             ; Enable interrupts
-    LDA #$90
+    LDA #$DD
     CLR B
 
 LOOP:
     BRA LOOP        ; Idle loop
 
 IRQ:
-    STA $6000+B     ; Write to framebuffer
+    STA $9000+B     ; Write to framebuffer
     INC B
     RTI
 
@@ -101,11 +89,23 @@ IRQ:
 
 ```
 
+## Project Structure
+
+* `cpu.py`: CPU core & Memory bus.
+* `assembler.py`: Two-pass assembler.
+* `disassembler.py`: Generates a disassembly of next instruction.
+* `timer.py`: Simple timer to generate IRQ/NMI signals.
+* `ui.py`: Tkinter dashboard & Framebuffer.
+* `main.py`: Application entry point.
+
+---
+
 ## Quick Start
 
 1. **Clone the repository**
 2. **Run:** `python main.py`
 3. **Execution:** Write or paste assembly code in the editor and use **Run** or **Step** to execute.
+
 
 ## Project Status
 
@@ -114,7 +114,7 @@ IRQ:
 *   **UI/Visuals:** Complete
 *   **Testing:** In progress
 
-# Why this project exists
+## Why this project exists
 
 This project was developed as a personal challenge to understand how a CPU works from the foundations. It served as a practical exercise to better understand low-level programming and to improve my Python development skills by building a simple but functional emulator from scratch.
 

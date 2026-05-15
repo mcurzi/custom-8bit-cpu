@@ -13,13 +13,16 @@ class EmulatorUI:
         self.root = root
         self.cpu = cpu
         self.memory = memory
+        self.mem = memory.mem
+        self.last_write = None
         self.timer = timer     # Timer externo para generar interrupcipnes
         self.use_nmi = False   # Con False, el timer se "conecta" las señal de IRQ, con True a NMI
 
-        # Reloj que hace correr el CPU a 1.2MHz
+        # Simulación del reloj de CPU basada en ciclos por instrucción (frecuencia objetivo aproximada: 1.2 MHz)
         self.cpu_hz = 1200000
         self.seconds_per_cycle = 1.0 / self.cpu_hz
         self.cycles_per_batch = 20000  # hace batches de esta cantidad de ciclos, luego chequea el tiempo transcurrido y ajusta velocidad
+        # self.loops = 0  # For speed testing purposes
         
         self.root.bind("<Key>", self.on_key_press) # Escuchar teclado
 
@@ -40,7 +43,8 @@ class EmulatorUI:
         # Botones
         self.btn_frame = tk.Frame(self.left_frame)
         self.btn_frame.pack(side=tk.TOP, fill=tk.X)
-        tk.Button(self.btn_frame, text="Run", command=self.run).pack(side=tk.LEFT)
+        tk.Button(self.btn_frame, text="Asm/Load", command=self.load_program).pack(side=tk.LEFT)
+        tk.Button(self.btn_frame, text="Run/Pause", command=self.run).pack(side=tk.LEFT)
         tk.Button(self.btn_frame, text="Step", command=self.step).pack(side=tk.LEFT)
         tk.Button(self.btn_frame, text="Reset", command=self.reset).pack(side=tk.LEFT)
 
@@ -57,24 +61,20 @@ class EmulatorUI:
         )
         self.canvas.pack(side=tk.TOP)
 
-        # Este bloque crea la grilla de pixeles una sola vez, para optimizar. Después es solo cambiar colores
+        # Este bloque crea la grilla de pixeles una sola vez. Después solo cambiaa colores
         self.screen_rects = []  # Matriz 2D con el id interno de cada rectangulo ("pixel")
-
         for y in range(192):
             row = []
-
             for x in range(256):
                 rect = self.canvas.create_rectangle(
-                    x * self.scale,
-                    y * self.scale,
-                    (x + 1) * self.scale,
-                    (y + 1) * self.scale,
+                    x * self.scale, y * self.scale,
+                    (x + 1) * self.scale, (y + 1) * self.scale,
                     fill="black",
-                    outline="black"
+                    outline=""  # Aparentemente sin outine es mas rapido porque no lo tiene que actualizar en cada frame
                 )
                 row.append(rect)
-
             self.screen_rects.append(row)
+
 
         # BOTTOM: CONTENEDOR HORIZONTAL
         self.bottom_frame = tk.Frame(self.right_frame)
@@ -151,14 +151,17 @@ class EmulatorUI:
 
     # Boton Run
     def run(self):
-        if not self.program_loaded:
-            self.load_program()
-
-        self.cpu.running = True
-        self.run_loop()
+        if self.program_loaded and not self.cpu.running:
+            self.cpu.running = True
+            self.run_loop()
+        elif self.cpu.running:
+            self.cpu.running = False
 
     def run_loop(self):
-        if not self.cpu.running:         # Si la CPU está detenida (HLT), no ejecuta
+        cycles_per_batch = self.cycles_per_batch
+        seconds_per_cycle = self.seconds_per_cycle
+        running = self.cpu.running
+        if not running:         # Si la CPU está detenida (HLT), no ejecuta
             self.update_views()
             return
 
@@ -166,29 +169,30 @@ class EmulatorUI:
         cycles = 0  # ciclos ejecutados en este batch
 
         # Ejecutar CPU hasta alcanzar cierta cantidad de ciclos
-        while cycles < self.cycles_per_batch:
+        while cycles < cycles_per_batch:
             c = self.system_step()   # ejecuta 1 instrucción
             cycles += c                  # acumula ciclos
 
+        #self.update_views()  # refrescar UI
+        self.update_screen()  # Refresca solo framebuffer, ni memoria, ni registros ni desensamblado
 
-        elapsed = time.perf_counter() - start_time          # tiempo real transcurrido
-        expected = cycles * self.seconds_per_cycle          # tiempo que debería haber tomado
+        elapsed = time.perf_counter() - start_time     # tiempo real transcurrido, incluye update de framebuffer
+        expected = cycles * seconds_per_cycle          # tiempo que debería haber tomado
 
-        if expected > elapsed:
-            time.sleep(expected - elapsed)  # frenar si vamos demasiado rápido
+        # Micropausa si va a más de los MHz deseados
+        if expected > (elapsed + 8): time.sleep(expected - elapsed) # 8ms es la pausa del root.afer()
 
+        # Calculo de velocidad, solo para test
+        # self.loops +=1
+        # if self.loops == 600: print(self.loops*cycles_per_batch) # Imprime 12.000.000, deberia tardar ~10 segundos.
 
-        self.update_views()  # refrescar UI
-        # reprogramar próximo ciclo sin bloquear UI (da lugar para pescar interrupcones)
-        self.root.after(16, self.run_loop) # 16 es aprox 60 veces por segundo, es la velocidad a la que se va a actualizar la UI.
+        # reprogramar próximo ciclo sin bloquear UI (da lugar para pescar interrupcones y botones)
+        self.loop_id =self.root.after(8, self.run_loop) # 8ms, es 125 veces por segundo
+
 
     # Boton Step
     def step(self):
-        if not self.program_loaded:
-            self.load_program()
-        else:
-            if self.cpu.running:
-                self.system_step()
+        self.system_step()
         self.update_views()
 
     def update_views(self):
@@ -211,16 +215,18 @@ class EmulatorUI:
         # MEMORY VIEW
         self.update_memory_line(self.cpu.PC)
             
-        if self.memory.last_write is not None:
-            self.update_memory_line(self.memory.last_write)
-            self.memory.last_write = None
+        if self.last_write is not None:
+            self.update_memory_line(self.last_write)
+            self.last_write = None
         # SCREEN
         self.update_screen()
 
 # Boton Reset
     def reset(self):
+        # Cancelar el afrer del loop 
+        self.root.after_cancel(self.loop_id)
         # limpiar memoria
-        self.memory.mem[:] = [0] * 0x10000
+        self.memory.mem[:] = b'\x00' * 65536
         # reiniciar CPU
         self.cpu.reset()
         # resetear "shadow buffer" de pantalla
@@ -231,28 +237,30 @@ class EmulatorUI:
                 self.canvas.itemconfig(
                     self.screen_rects[y][x],
                     fill="black",
-                    outline="black"
+                    outline=""
                 )
         # reconstruir visor de memoria
         self.build_memory_view()
         # marcar que no hay programa cargado y que frenar el CPU
         self.program_loaded = False
-        self.cpu.running = False
+        # self.loops = 0  # dor speed testing purposes
         # actualizar UI
         self.update_views()
 
 # Memory viewer, se ejecuta 1 sola vez al cargar el programa, despues update_view actualiza linas puntuales de memoria
     def build_memory_view(self):
+        mem = self.mem
         self.mem_view.delete("1.0", tk.END)
 
         for i in range(0x0000, 0x10000, 16):
             line = f"{i:04X}: "
             for j in range(16):
-                val = self.memory.read(i + j)
+                val = mem[i + j]
                 line += f"{val:02X} "
             self.mem_view.insert(tk.END, line + "\n")
             
     def update_memory_line(self, addr):
+        mem = self.mem
         base = addr & 0xFFF0
         line_index = base // 16 + 1
 
@@ -261,7 +269,7 @@ class EmulatorUI:
 
         line = f"{base:04X}: "
         for j in range(16):
-            val = self.memory.read(base + j)
+            val = mem[base + j]
             line += f"{val:02X} "
 
         self.mem_view.replace(f"{line_index}.0", f"{line_index}.end", line)
@@ -269,57 +277,55 @@ class EmulatorUI:
         # restaurar scroll real
         self.mem_view.see(top_index)
 
-# Pantalla
+# Pantalla, aca es donde la emulacion pierde performance con tkinter
     def update_screen(self):
+        mem = self.mem
         base = 0x6000
+        prev = self.prev_screen
 
-        # Paleta de 16 colores tipo CGA/Atari
-        PALETTE_16 = {
-            0: "black", 1: "navy", 2: "green", 3: "teal",
-            4: "maroon", 5: "purple", 6: "olive", 7: "silver",
-            8: "gray", 9: "blue", 10: "lime", 11: "cyan",
-            12: "red", 13: "magenta", 14: "yellow", 15: "white"
-        }
+        # Una lista es más rápida que un diccionario para índices numéricos
+        PALETTE_16 = [
+            "black", "navy", "green", "teal", "maroon", "purple", "olive", "silver",
+            "gray", "blue", "lime", "cyan", "red", "magenta", "yellow", "white"
+        ]
 
-        # Ahora recorremos por byte. Cada fila de 256 píxeles ocupa 128 bytes.
+        # Referencias locales son mas rápidas en el loop
+        itemconfig = self.canvas.itemconfig
+        rects = self.screen_rects
+
         for y in range(192):
+            y_offset = y * 128  # Precalculamos el offset de la fila
+            rect_row = rects[y] # Referencia local a la fila de la matriz
+
             for x_byte in range(128):
-                addr = base + (y * 128) + x_byte
-                val = self.memory.read(addr)
+                idx = y_offset + x_byte
+                val = mem[base + idx]
 
-                # El índice de cambios ahora es por dirección de memoria
-                idx = y * 128 + x_byte
+                if val != prev[idx]:
+                    prev[idx] = val
 
-                if val != self.prev_screen[idx]:
-                    self.prev_screen[idx] = val
+                    # Extraemos colores
+                    c1 = PALETTE_16[(val >> 4) & 0x0F]
+                    c2 = PALETTE_16[val & 0x0F]
 
-                    # Extraemos los dos píxeles del byte (4 bits cada uno)
-                    # Píxel A (bits 7-4), Píxel B (bits 3-0)
-                    píxeles = [
-                        (val >> 4) & 0x0F, # Izquierdo
-                        val & 0x0F         # Derecho
-                    ]
-
-                    for i, color_idx in enumerate(píxeles):
-                        x_real = (x_byte * 2) + i
-                        color = PALETTE_16[color_idx]
-
-                        self.canvas.itemconfig(
-                            self.screen_rects[y][x_real],
-                            fill=color,
-                            outline=color
-                        )
+                    # Actualizamos rectángulos (Solo relleno, sin tocar outline)
+                    x_base = x_byte << 1 # x_byte * 2
+                    itemconfig(rect_row[x_base], fill=c1)
+                    itemconfig(rect_row[x_base + 1], fill=c2)
 
     def on_key_press(self, event):
+        mem = self.mem
         # Obtiene el código ASCII de la tecla
         char_code = ord(event.char) if len(event.char) == 1 else 0
         
         if char_code > 0:
             # Escribe el ASCII en RAM 0xC001
-            self.memory.write(0xC001, char_code)
+            mem[0xC001] = char_code & 0xFF
+            self.last_write = 0xC001
             
             #Pone el bit 7 en 1 ($80) en el registro de STATUS de 0xC000
-            self.memory.write(0xC000, 0x80)
+            mem[0xC000] = 0x80
+            self.last_write = 0xC000
             
             # Activar si se quiere enviar interrupción, sino de usa por polling en el código ASM
             # self.cpu.request_irq()
@@ -327,9 +333,9 @@ class EmulatorUI:
 
 # Cargar el programa
     def load_program(self):
-
+        mem = self.mem
         # reset
-        self.memory.mem[:] = [0] * 0x10000 # alponer [:], resetea el contenido de la lista sin reemplazar la lista en sí.
+        self.memory.mem[:] = b'\x00' * 65536
         self.cpu.__init__(self.memory)
 
         #Ensamblar codigo
@@ -339,22 +345,19 @@ class EmulatorUI:
         # cargar programa en memoria
         for addr, data in segments:
             for i, byte in enumerate(data):
-                self.memory.write(addr + i, byte)
+                mem[addr + i] = byte
 
-        self.cpu.running = True
         self.program_loaded = True
         
         self.build_memory_view()
-        self.memory.last_write = None
+        self.last_write = None
         
-        # Muestra long de programa en bytes y memoria en consola, solo para debug, se puede desactivar.
-        #print(f"\n{len(program)}")
-        #for i in range(0x100,len(program)+0x100):
-        #    if i % 16 == 0:
-        #            print(f"\n{i:04X}:", end=" ")
-        #    print(f"{self.memory.read(i):02X}", end=" ", flush=True)
-            # El flush manda el texto inmediatamentew a la salida, sin esperar que se llene el buffer
- 
-
-
+        # Muestra los segmentos programa en consola, solo para debug
+        for j in range(0,len(segments)):
+            for i in range(0,len(segments[j][1])):
+                if i % 16 == 0:
+                        print(f"\n{segments[j][0]+i:04X}:", end=" ")
+                print(f"{mem[segments[j][0]+i]:02X}", end=" ", flush=True)
+            print(f"   {len(segments[j][1])} bytes")
+                # El flush manda el texto inmediatamente a la salida, sin esperar que se llene el buffer
 

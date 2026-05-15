@@ -1,129 +1,51 @@
-### CPU Emulator Assembler
-### v1.0
+### CPU Emulator Assembler v1.0
+
+INSTRUCTION_TABLE = {
+    # ALU (cc=0)
+    "ADC": (0, 0, 0), "SBB": (1, 0, 0), "AND": (2, 0, 0), "ORA": (3, 0, 0),
+    "XOR": (4, 0, 0), "CMP": (5, 0, 0), "CPB": (6, 0, 0), "CPC": (7, 0, 0),
+    
+    # LOAD/STORE (cc=1)
+    "LDA": (0, 0, 1), "LDB": (1, 0, 1), "LDC": (2, 0, 1), "LDD": (3, 0, 1),
+    "STA": (4, 0, 1), "STB": (5, 0, 1), "STC": (6, 0, 1), "STD": (7, 0, 1),
+
+    # FLOW (cc=2)
+    "JMP": (0, 0, 2), "JSR": (1, 0, 2), "BRA": (2, 0, 2), "BSR": (3, 0, 2),
+    "RET": (4, 0, 2), "RTI": (5, 0, 2),
+
+    # SPECIAL (cc=3)
+    "MOV": (0, 0, 3), "INC": (1, 0, 3), "DEC": (2, 0, 3),
+    "SHL": (3, 0, 3), "SHR": (3, 1, 3), "ROL": (3, 2, 3), "ROR": (3, 3, 3),
+    "NEG": (4, 0, 3), "CLR": (4, 4, 3),
+    "CLC": (5, 0, 3), "SEC": (5, 1, 3), "CLV": (5, 2, 3), "CLI": (5, 4, 3), "SEI": (5, 5, 3),
+    "PSH": (6, 0, 3), "PLL": (6, 4, 3),
+    "NOP": (7, 0, 3), "LSP": (7, 1, 3), "HLT": (7, 2, 3)
+}
 
 # Tablas base
-REGISTERS = {
-    "A": 0,
-    "B": 1,
-    "C": 2,
-    "D": 3,
-    "[DC]": 4
-}
-
-CONDITIONS = {
-    "UN": 0,
-    "ZF": 1,
-    "NZ": 2,
-    "NF": 3,
-    "NN": 4,
-    "CF": 5,
-    "NC": 6,
-    "VF": 7
-}
-
-ALU_OPS = {
-    "ADC": 0,
-    "SBB": 1,
-    "AND": 2,
-    "ORA": 3,
-    "XOR": 4,
-    "CMP": 5,
-    "CPB": 6,
-    "CPC": 7
-}
-
-LOAD_OPS = {
-    "LDA": 0,
-    "LDB": 1,
-    "LDC": 2,
-    "LDD": 3,
-    "STA": 4,
-    "STB": 5,
-    "STC": 6,
-    "STD": 7
-}
-
-REG_REG = {
-    "A,B": 0,
-    "A,C": 1,
-    "A,D": 2,
-    "B,A": 3,
-    "C,A": 4,
-    "D,A": 5,
-    "B,C": 6,
-    "C,B": 7
-    }
-
-FLOW_OPS = {
-    "JMP": 0,
-    "JSR": 1,
-    "BRA": 2,
-    "BSR": 3,
-    "RET": 4,
-    "RTI": 5
-}
-
-SPECIAL_OPS = {
-    "MOV": 0,
-    "INC": 1,
-    "DEC": 2,
-    "SHL": 30,
-    "SHR": 31,
-    "ROL": 32,
-    "ROR": 33,
-    "NEG": 40,
-    "CLR": 41,
-    "CLC": 50,
-    "SEC": 51,
-    "CLV": 52,
-    "CLI": 54,
-    "SEI": 55,
-    "PSH": 60,
-    "PLL": 61,
-    "NOP": 70,
-    "LSP": 71,
-    "HLT": 72
-}
-
-STACK_OPS = {
-    "A": 0,
-    "B": 1,
-    "DC": 2,
-    "FL": 3
-}    
+REGISTERS = {"A": 0, "B": 1, "C": 2, "D": 3, "[DC]": 4}
+CONDITIONS = {"UN": 0, "ZF": 1, "NZ": 2, "NF": 3, "NN": 4, "CF": 5, "NC": 6, "VF": 7}
+REG_REG = {"A,B": 0, "A,C": 1, "A,D": 2, "B,A": 3, "C,A": 4, "D,A": 5, "B,C": 6, "C,B": 7 } 
+STACK_OPS = {"A": 0, "B": 1, "DC": 2, "FL": 3}      
 
 ### Helpers
-def build_opcode(aaa, bbb, cc):
-    return (aaa << 5) | (bbb << 2) | cc
-
 def parse_number(text):
     text = text.strip()
-
-    if text.startswith("$"):
-        return int(text[1:], 16)
-    
-    if text.startswith("%"):
-        return int(text[1:], 2)
-
+    if text.startswith("$"): return int(text[1:], 16)
+    if text.startswith("%"): return int(text[1:], 2)
     return int(text)
 
 def clean_line(line):
     # elimina comentarios
-    if ";" in line:
-        line = line[:line.index(";")]
+    if ";" in line: line = line[:line.index(";")]
     return line.strip()
 
 def split_instruction(line):
     parts = line.split()
-
-    if len(parts) == 1:
-        return parts[0].upper(), None
-
+    if len(parts) == 1: return parts[0].upper(), None
     instr = parts[0].upper()
     operand = line[len(parts[0]):].strip()
-
     return instr, operand
-
 
 ### CLASE ASSEMBLER
 class Assembler:
@@ -164,45 +86,40 @@ class Assembler:
 
     # Funcion para identificar el tipo de direccionamiento
     def detect_addressing(self, op):
+            op = op.strip().upper().replace(" ", "")
 
-        op = op.strip().upper()
+            if op.startswith("#"):          # inmediato
+                val = self.resolve_value(op[1:])
+                return 0, val, 1
 
-        # inmediato
-        if op.startswith("#"):
-            val = self.resolve_value(op[1:]) # inmediato para LOAD, STORE y ALU en A
-            return 0, val, 1
+            elif op.startswith("[DC"):           # [DC] o [DC+B]
+                if "+B" in op.replace(" ", ""):  # Usa "in" por si hay espacios como "[DC + B]"
+                    return 7, None, 0
+                return 4, None, 0
 
-        # [DC] o [DC+B]
-        elif op.startswith("[DC"):
-            if "[DC+B]" in op:
-                return 7, None, 0
-            return 4, None, 0
+            elif op.startswith("("):              # (xxxx) o (xxxx)+B donde xxxx puede ser tambien un label
+                inner = op[op.find("(")+1 : op.find(")")].strip()
+                val = self.resolve_value(inner)
+                if ")+B" in op.replace(" ", ""):
+                    return 6, val, 2
+                return 5, val, 2
 
-        # (xxxx) o (xxxx)+B donde xxxx puede ser tambien un label
-        elif op.startswith("("):
-            inner = op[1:op.index(")")].strip().upper()
-            val = self.resolve_value(inner)
-            if ")+B" in op:
-                return 6, val, 2
-            return 5, val, 2
+            elif "+" in op:  # abs+B o abs+C
+                parts = op.split("+")   # Parte el operando en 2 por el signo +
+                base = parts[0].strip()
+                idx = parts[1].strip().upper()
+                val = self.resolve_value(base)
+                if idx == "B": return 2, val, 2
+                if idx == "C": return 3, val, 2
+                # Si hay un + pero no es B ni C, cae al fallback absoluto por si es un Label+Offset
+                return 1, self.resolve_value(op), 2
 
-        elif "+" in op and not op.startswith("("):
-            # abs+B o abs+C
-            base, idx = op.split("+")      # Parte el operando en 2 por el signo +
-            idx = idx.strip().upper()
-            val = self.resolve_value(base.strip())
-            if idx == "B":
-                return 2, val, 2
-            if idx == "C":
-                return 3, val, 2
-
-        else:
-            try: # Absoluto, fallback general
-                val = self.resolve_value(op)
-                return 1, val, 2
-            except: # si falla el resolve value
-                raise Exception(f"{op}: operando inválido")
-
+            else:
+                try: # Absoluto, label o direccion
+                    val = self.resolve_value(op)
+                    return 1, val, 2
+                except: # si falla el resolve value
+                    raise Exception(f"{op}: operando inválido")
 
     # PRIMERA PASADA
     def first_pass(self, lines):
@@ -237,40 +154,29 @@ class Assembler:
                 continue
 
             instr, operand = split_instruction(line)
-
             size = 1 # Opcode ocupa 1 byte
 
             if operand:
-                if instr.startswith("BRA") or instr.startswith("BSR"):
-                    size += 1  # offset relativo (1 byte)
-
-                elif operand.startswith("#"):
-                    size += 1  # inmediato
-
-                elif instr in SPECIAL_OPS:
-                    size += 0  # Tienen operando pero ocupan solo 1 byte
-                    
-                elif operand.startswith("[DC"):
-                    size += 0  # implícito
-
-                else:
-                    size += 2  # absoluto (2 bytes)
-
+                if instr.startswith("BRA") or instr.startswith("BSR"): size += 1  # offset relativo (1 byte)
+                elif operand.startswith("#"): size += 1  # inmediato
+                elif INSTRUCTION_TABLE.get(instr, (0,0,0))[2] == 3: # Si cc es 3 (SPECIAL)
+                    if instr == "LSP": size += 2
+                    else: size += 0    
+                elif operand.startswith("[DC"): size += 0  # implícito
+                else: size += 2  # absoluto (2 bytes)
             pc += size
 
     # SEGUNDA PASADA
     def second_pass(self, lines):
-
         for line in lines:
             line = clean_line(line)
-            if not line:
-                continue
+            if not line or line.endswith(":"): continue
 
             if line.startswith("."):
                 parts = line.split(maxsplit=1)
                 directive = parts[0]
                 parts[1] = parts[1].replace(" ", "")
-                if directive == ".org":              # Si se usa .byte o .word, siempre usar .org antes, sino graba en 0x0100 por default
+                if directive == ".org":              # Si se usa .byte o .word, siempre usar .org antes, sino graba en 0x0000 por default
                     addr = parse_number(parts[1])
                     self.start_segment(addr)
                     continue
@@ -290,169 +196,62 @@ class Assembler:
                         self.emit((val >> 8) & 0xFF)
                     continue
 
-            if line.endswith(":"):
-                continue
-
             instr, operand = split_instruction(line)
             self.assemble_instruction(instr, operand)
 
     ### ENSAMBLAR
     def assemble_instruction(self, instr, operand):
+        if instr not in INSTRUCTION_TABLE:
+            raise Exception(f"Instrucción desconocida: {instr}")
 
-        # ALU
-        if instr in ALU_OPS:            
-            aaa = ALU_OPS[instr]
-            bbb, value, size = self.detect_addressing(operand)
-                    
-            opcode = build_opcode(aaa, bbb, 0)
-            self.emit(opcode)
-            
-            if value is not None:
-                self.emit_word(value, size)
-            
-            return
+        aaa, bbb_base, cc = INSTRUCTION_TABLE[instr]
+        bbb = bbb_base
+        value = None
+        size = 0
 
-        # LOAD
-        if instr in LOAD_OPS:
-            if instr in ["STA", "STB", "STC", "STD"] and operand.startswith("#"):
+        # Lógica de operandos según la categoría (cc)
+        if cc == 0 or cc == 1:  # ALU y LOAD
+            if cc == 1 and instr.startswith("ST") and operand.startswith("#"):
                 raise Exception(f"{instr} no soporta modo inmediato")
-
-            aaa = LOAD_OPS[instr]
             bbb, value, size = self.detect_addressing(operand)
 
-            opcode = build_opcode(aaa, bbb, 1)
-            self.emit(opcode)
-
-            if value is not None:
-                self.emit_word(value, size)
-
-            return
-
-        # FLOW
-        if instr in FLOW_OPS:
-            aaa = FLOW_OPS[instr]
+        elif cc == 2:  # FLOW
             if operand and aaa < 4:
-                # caso: "label" (incondicional)
-                if "," not in operand:
-                    bbb = 0  # UN
-                    idx = operand.strip().upper()
-
-                else:
-                    # caso: "ZF,label"
-                    cond, target = operand.split(",")
-                    cond = cond.strip().upper()
-                    idx = target.strip().upper()
-
-                    bbb = CONDITIONS[cond]
-
-                opcode = build_opcode(aaa, bbb, 2)
-                self.emit(opcode)
-
-                # resolver destino
-                if idx in self.labels:
-                    target = self.labels[idx]
-                else:
-                    target = parse_number(idx)
-
-                # BRA / BSR RELATIVO (1 byte)
-                if instr in ["BRA", "BSR"]:
-                    offset = target - (self.pc + 1)
-
-                    if offset < -128 or offset > 127:
+                cond_str, target_str = (operand.split(",") if "," in operand else ("UN", operand))
+                bbb = CONDITIONS[cond_str.strip().upper()]
+                target = self.resolve_value(target_str.strip())
+                if instr in ["BRA", "BSR"]: # Branches
+                    value = target - (self.pc + 2)      # relative distance to the PC + 2 (instr + 1byte operand)
+                    if value < -128 or value > 127:
                         raise Exception("Branch fuera de rango")
-
-                    self.emit(offset & 0xFF)
-
-                # RESTO ABSOLUTO (2 bytes)
+                    else:
+                        value = value & 0xFF
+                        size = 1
                 else:
-                    self.emit_word(target, 2)
-                return
-                
-            elif aaa == 4 or aaa == 5:  # RET/RTI, no llevan operando
-                opcode = build_opcode(aaa, 0, 2)
-                self.emit(opcode)
-                return           
-             
-            else:
-                raise Exception(f"{instr} no soporta ese modo")
+                    value = target
+                    size = 2
 
-        # SPECIAL
-        if instr in SPECIAL_OPS:
-            aaa = SPECIAL_OPS[instr]
-            bbb = 0
-            value = None
-
+        elif cc == 3:  # SPECIAL
             if operand:
-                operand = operand.strip().upper()
-
-            if aaa == 0: # MOV
-                if operand in REG_REG:
-                    bbb = REG_REG[operand]
-
-            elif aaa == 1 or aaa == 2:   # INC/DEC
-                if operand in REGISTERS:
-                    bbb = REGISTERS[operand]            
-
-            #Shifts y rotates
-            elif 30 <= aaa <= 33:
-                # Registro para shifts y rotates de SPECIAL
-                if operand in ["A", "B"]:
-                    if operand == "A":
-                        base = 0
-                    if operand == "B":
-                        base = 4
-                bbb = base + (aaa - 30)
-                aaa = 3
-
-            elif aaa == 40: # NEG
-                if operand in REGISTERS:
-                    bbb = REGISTERS[operand]
-                    aaa = 4
-            elif aaa == 41: # CLR
-                if operand in REGISTERS:
-                    bbb = REGISTERS[operand] + 4
-                    aaa = 4
-
-            # CLC, SEC, CLV, CLI, SEI
-            elif 50 <= aaa <= 55:
-                bbb = aaa % 10
-                aaa = 5
-
-            elif aaa == 70: # NOP
-                aaa = 7
-                bbb = 0
-            elif aaa == 71: # LSP, load stack pointer
-                if operand.startswith("#"):
-                    aaa = 7
-                    bbb = 1
+                op_up = operand.strip().upper()
+                if instr == "MOV":
+                    bbb = REG_REG[op_up]
+                elif instr in ["INC", "DEC", "NEG", "CLR"]:
+                    bbb = bbb_base + REGISTERS[op_up]
+                elif instr in ["SHL", "SHR", "ROL", "ROR"]:
+                    reg_offset = 0 if op_up == "A" else 4
+                    bbb = reg_offset + bbb_base
+                elif instr in ["PSH", "PLL"]:
+                    bbb = bbb_base + STACK_OPS[op_up]
+                elif instr == "LSP":
                     value = self.resolve_value(operand[1:])
                     size = 2
-                else:
-                    raise Exception(f"{instr} sólo soporta modo inmediato")
 
-            elif aaa == 72: # HLT
-                aaa = 7
-                bbb = 2
-
-            #PUSH/PULL
-            elif aaa == 60:
-                bbb = STACK_OPS[operand]
-                aaa = 6
-               
-            elif aaa == 61:
-                bbb = STACK_OPS[operand] + 4
-                aaa = 6
-
-            opcode = build_opcode(aaa, bbb, 3)
-            self.emit(opcode)
-
-            if value is not None:
-                self.emit_word(value, size)
-
-            return
-
-        raise Exception("Instrucción desconocida: " + instr)
-
+        # Emisión final unificada
+        opcode = (aaa << 5) | (bbb << 2) | cc
+        self.emit(opcode)
+        if value is not None: self.emit_word(value, size)
+        
     # EMITIR BYTES
     def emit(self, byte):
         if self.current_segment is None:
@@ -466,8 +265,7 @@ class Assembler:
         else:
             self.emit(value & 0xFF)
             self.emit((value >> 8) & 0xFF)
-
-
+            
 # FUNCIÓN PRINCIPAL
 def assemble(code):
     asm = Assembler()
@@ -477,5 +275,3 @@ def assemble(code):
     asm.second_pass(lines)
 
     return asm.segments
-
-

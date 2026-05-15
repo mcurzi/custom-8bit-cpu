@@ -13,9 +13,14 @@ cpu = CPU(mem)
 timer = Timer(freq_hz=60)
 
 root = tk.Tk()
-
 # Creates user interface and connects everything
 ui = EmulatorUI(root, cpu, mem, timer)
+
+def safe_exit():
+    ui.reset() 
+    root.destroy()
+
+root.protocol("WM_DELETE_WINDOW", safe_exit)
 
 # Set UI window title
 root.title("Custom 8-bit Architecture Emulator [v1.0]")

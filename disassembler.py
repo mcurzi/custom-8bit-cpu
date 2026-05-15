@@ -17,8 +17,8 @@ SHIFT_NAMES = ["SHL A", "SHR A", "ROL A", "ROR A", "SHL B", "SHR B", "ROL B", "R
 STACK_NAMES = ["PSH A", "PSH B", "PSH DC", "PSH FL", "PLL A", "PLL B", "PLL DC", "PLL FL"]
 
 
-def disassemble_at(memory, addr):
-    op = memory.read(addr)
+def disassemble_at(mem, addr):
+    op = mem[addr]
 
     aaa = (op >> 5) & 7
     bbb = (op >> 2) & 7
@@ -40,25 +40,25 @@ def disassemble_at(memory, addr):
         mode = bbb
 
         if mode == 0:  # inmediato
-            val = memory.read(addr + 1)
+            val = mem[addr + 1]
             operand = f"#${val:02X}"
             size = 2
 
         elif mode == 1:  # absoluto
-            lo = memory.read(addr + 1)
-            hi = memory.read(addr + 2)
+            lo = mem[addr + 1]
+            hi = mem[addr + 2]
             operand = f"${(hi<<8|lo):04X}"
             size = 3
 
         elif mode == 2:  # abs,B
-            lo = memory.read(addr + 1)
-            hi = memory.read(addr + 2)
+            lo = mem[addr + 1]
+            hi = mem[addr + 2]
             operand = f"${(hi<<8|lo):04X},B"
             size = 3
 
         elif mode == 3:  # abs,C
-            lo = memory.read(addr + 1)
-            hi = memory.read(addr + 2)
+            lo = mem[addr + 1]
+            hi = mem[addr + 2]
             operand = f"${(hi<<8|lo):04X},C"
             size = 3
 
@@ -67,14 +67,14 @@ def disassemble_at(memory, addr):
             size = 1
                 
         elif mode == 5: # ind
-            lo = memory.read(addr + 1)
-            hi = memory.read(addr + 2)
+            lo = mem[addr + 1]
+            hi = mem[addr + 2]
             operand = f"(${(hi<<8|lo):04X})"
             size = 3
 
         elif mode == 6: # ind,B
-            lo = memory.read(addr + 1)
-            hi = memory.read(addr + 2)
+            lo = mem[addr + 1]
+            hi = mem[addr + 2]
             operand = f"(${(hi<<8|lo):04X}),B"
             size = 3
 
@@ -90,7 +90,7 @@ def disassemble_at(memory, addr):
 
         # BRA/BSR relativo
         if aaa in (2, 3):
-            offset = memory.read(addr + 1)
+            offset = mem[addr + 1]
             if offset & 0x80:
                 offset -= 0x100
 
@@ -103,8 +103,8 @@ def disassemble_at(memory, addr):
             
         else:
             # JMP/JSR absoluto
-            lo = memory.read(addr + 1)
-            hi = memory.read(addr + 2)
+            lo = mem[addr + 1]
+            hi = mem[addr + 2]
             operand = f"${(hi<<8|lo):04X}"
             size = 3
 
@@ -169,13 +169,13 @@ def disassemble_at(memory, addr):
     if size == 1:
         bytes_str = f"{op:02X}"
     elif size == 2:
-        bytes_str = f"{op:02X} {memory.read(addr+1):02X}"
+        bytes_str = f"{op:02X} {mem[addr+1]:02X}"
     else:
-        bytes_str = f"{op:02X} {memory.read(addr+1):02X} {memory.read(addr+2):02X}"
+        bytes_str = f"{op:02X} {mem[addr+1]:02X} {mem[addr+2]:02X}"
 
     return f"{addr:04X}: {bytes_str:<8} {mnemonic} {operand}", size
 
 
 def disassemble(cpu):
-    line, size = disassemble_at(cpu.memory, cpu.PC)
+    line, size = disassemble_at(cpu.mem, cpu.PC)
     return line
