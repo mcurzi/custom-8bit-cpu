@@ -118,5 +118,5 @@ The CPU maintains 5 status flags:
 | `$0000 - $5FFF` | General purpose RAM  |
 | `$6000 - $BFFF` |  **Graphics Framebuffer** (256x192 px, 2bpp)  |
 | `$C000 - $EFFF` | System RAM (stack, I/O, future runtime data) |
-| `$F000 - $FFFF` | System area (future boot and system code, vectors |
+| `$F000 - $FFFF` | System area (future boot and system code, vectors) |
 
