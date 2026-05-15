@@ -106,8 +106,8 @@ copy_loop:
     STA fb_ptr
     PSH B
     LDB #$01
-    LDC fb_ptr+B   ; temposary use of B = 1
-    BSR CF, INC_hb ; if carry, INCreases hight byte
+    LDC fb_ptr+B   ; temporary use of B = 1
+    BSR CF, INC_hb ; if carry, increases hight byte
     PLL B          ; recover original B
     CLR C
     BRA un,copy_loop
