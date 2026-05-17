@@ -54,7 +54,7 @@ start:
     LDA #$03        ; animation speed (60hz/A)
     STA $1003       ; guarda velocidad en RAM
 
-
+; Empty main loop, just to capture timer interruptions
 loop:
     BRA loop
 
@@ -84,8 +84,8 @@ copy_loop:
     PLL dc
     STA (fb_ptr)+B    ; write in FB with offset B
 
-    ; the following 5 lines insert a blac byte at each side of each
-    ; sprite line, to eares trails
+    ; the following 5 lines insert a black byte at each side of each
+    ; sprite line, to erase trails
     LDA #$00
     LDB #$FF
     STA (fb_ptr)+B
@@ -156,7 +156,6 @@ cont:
     JMP zf,move_right
     JMP nz,move_left
 
-
 move_right:
     LDD #$00
     STD $1001
@@ -165,12 +164,10 @@ move_right:
     BSR nf,change_d
     JMP end
 
-
 change_d:
     LDD #$01
     STD $1001
     RET
-
 
 move_left:
     DEC a
@@ -193,7 +190,6 @@ end:
 
 skip:
     RTI
-
 
 ; IRQ vector address
 .org $FFFC

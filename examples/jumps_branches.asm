@@ -3,15 +3,15 @@ LDA #$FB
 
 loop:
 ADC #$02
-BSR CF,incrB  ; Branch if carry to incrB ($0112). No need to compare, CF will be 1 if A > #$FF
-JMP ZF,cont   ; jump if zero to $010C
-JMP loop      ; unconditional jump to $0102
+BSR CF,incrB  ; Branch if carry to incrB ($0012). CF will be 1 when A > #$FF
+JMP ZF,cont   ; jump if zero to $000C
+JMP loop      ; unconditional jump to $0002
 cont:
-JSR decrC     ; unconditional jsr to decrC ($0117)
-JMP end       ; unconditional jsr to end ($0119)
+JSR decrC     ; unconditional jsr to decrC ($0017)
+JMP end       ; unconditional jsr to end ($0019)
 
 incrB:
-INC b
+INC B
 CLC
 SBB #$01      ; this substract activates ZF
 RET

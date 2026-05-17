@@ -1,4 +1,5 @@
-;;; Test Load/Store/Move
+;;; Test Load/Store/Move and different adressing modes
+
 ldb #$1F    ; imm
 stb $83     ; abs
 stb $B3
@@ -6,7 +7,7 @@ ldc #$A2
 stc $83+b   ; abs+B
 lda #$C0
 sta $B0
-ldb ($83)   ; (ptr)
+ldb ($83)   ; (ptr) $1F + #$1B
 ldd #$02
 sta [DC]    ; DC pointer: adress $02A2
 sta ($83)+b ; (ptr)+B: $001F + #$1B = $003A

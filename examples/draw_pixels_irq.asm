@@ -1,6 +1,6 @@
-;;; Tests framebuffer and IRQs by drawing pixels at 60hz
+;;; Tests framebuffer and interruptions, drawing pixels
 
-; Main code/program is in 0x0000, this is where PC starts
+; Main code/program is in 0x0000, PC starts here at reset
 .org $0000
     CLI       ; clear interrupt flag to accept IRQs
     LDA #$DD  ; initialize registers
@@ -8,10 +8,9 @@
     CLR C
     LDD #$A0
 
-; Empty loop, just running CPU while receiving
-; interruptions from an external timer at 60hz.
+; Simple loop running while receiving IRQs from an external timer at 60hz.
 LOOP:
-    CPC #$FF
+    CPC #$FF    ; C starts in 0 and is incremented in the IRQ subroutine
     BRA NC,end  ; branch if not minus (No Carry flag)
     BRA LOOP
 
@@ -33,7 +32,7 @@ IRQ:
 rep_color:
     MOV C,A
     AND #$0F
-    STA $0100 ; sabes low nibble
+    STA $0100 ; saves low nibble
     SHL A     ; shift low nibble to high nibble
     SHL A
     SHL A
