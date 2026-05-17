@@ -11,13 +11,12 @@ class Memory:
 class CPU:
     def __init__(self, memory: Memory): # Recibe instancia de Memory como input al ser creada
         self.mem = memory.mem   #Referencia directa al bytearray para saltar el overhead de la clase Memory
-        self.mem_meta = memory         # acceso a last_write
         self.memory = memory
         self.irq_pending = False
         self.nmi_pending = False
         self.nmi_line = False
         self.prev_nmi_line = False
-        self.last_write=None
+        self.last_write: int | None = None
 
         self.reset()  # reutiliza lógica, el reset apunta el PC directo al inicio del programa, no es un vector.
 
@@ -115,12 +114,11 @@ class CPU:
     #Stack helpers
     def push8(self, val):    
         mem = self.mem                #Versiones locales de variables de memoria son mas rapidas
-        meta = self.mem_meta
 
         self.SP = (self.SP - 1) & 0xFFFF
         addr = self.SP
         mem[addr] = val  # Escritura directa, no precisa el wrap & 0xFF porque es un bytearray
-        meta.last_write = self.SP
+        self.last_write = self.SP
 
     def pull8(self):
         val = self.mem[self.SP] # Lectura directa
@@ -317,7 +315,6 @@ class CPU:
     def exec_mem(self, aaa, bbb):
     
         mem = self.mem   # Acceder a una variable local es mucho más rápido que acceder a un atributo.
-        meta = self.mem_meta
 
         if aaa < 4:  # LOAD
             v, addr, cycles = self.fetch_operand(bbb)
@@ -340,7 +337,7 @@ class CPU:
                 cycles += 2
                 
                 mem[addr] = val
-                meta.last_write = addr
+                self.last_write = addr
 
         return cycles
 

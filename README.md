@@ -7,14 +7,13 @@ A fully custom 8-bit CPU architecture designed and implemented from scratch in P
 - Assembler & disassembler
 - Memory-mapped graphics
 - Real-time debugger GUI
-- Step-by-step execution
 - Examples in assembly code
 
 <p align="center">
   <img src="demo.gif" width="650">
 </p>
 
-*Emulated execution at ~1.2 MHz, framebuffer at ~60 fps (GIF capture has way less fps)*
+*Emulated execution at ~1.2 MHz, framebuffer at ~60 fps*
 
 ---
 
@@ -104,7 +103,7 @@ IRQ:
 
 1. **Clone the repository**
 2. **Run:** `python main.py`
-3. **Execution:** Write or paste assembly code in the editor and use **Run** or **Step** to execute.
+3. **Execution:** Write or paste the program in assembly code in the editor. Compile and load the program with the **Asm/Load**. If the program loaded correctly in memory, use **Run/Pause** or **Step** to execute.
 
 
 ## Project Status
@@ -116,7 +115,7 @@ IRQ:
 
 ## Why this project exists
 
-This project was developed as a personal challenge to understand how a CPU works from the foundations. It served as a practical exercise to better understand low-level programming and to improve my Python development skills by building a simple but functional emulator from scratch.
+This project was developed as a personal challenge. It served as a practical exercise to better understand how a CPU works from the foundations, to learn low-level programming and to improve my Python development skills by building a simple but functional emulator from scratch.
 
 ## Inspiration
 

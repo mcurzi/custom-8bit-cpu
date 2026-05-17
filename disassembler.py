@@ -173,7 +173,7 @@ def disassemble_at(mem, addr):
     else:
         bytes_str = f"{op:02X} {mem[addr+1]:02X} {mem[addr+2]:02X}"
 
-    return f"{addr:04X}: {bytes_str:<8} {mnemonic} {operand}", size
+    return f"0x{addr:04X}: {bytes_str:<8}\n          {mnemonic} {operand}", size
 
 
 def disassemble(cpu):

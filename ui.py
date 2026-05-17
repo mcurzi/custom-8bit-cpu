@@ -27,9 +27,10 @@ class EmulatorUI:
         self.root.bind("<Key>", self.on_key_press) # Escuchar teclado
 
         self.program_loaded = False
+        self.loop_id = None
 
         # Variables del framebuffer
-        self.scale = 3  # para la pantalla: 3 pixeles por "pixel"
+        self.scale = 2  # Aumenta la escala (pixeles por "pixel")
         self.prev_screen = [0] * (128 * 192)  # guarda el estado anterior de cada byte (2 pixeles). Esto evita redibujar toda la pantalla.
 
         ### Frame izquierdo (editor + botones)
@@ -81,7 +82,7 @@ class EmulatorUI:
         self.bottom_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
         # IZQUIERDA: REGISTROS
-        self.reg_frame = tk.Frame(self.bottom_frame, width=300)
+        self.reg_frame = tk.Frame(self.bottom_frame, width=200)
         self.reg_frame.pack(side=tk.LEFT, fill=tk.Y)
         self.reg_frame.pack_propagate(False)
 
@@ -107,7 +108,7 @@ class EmulatorUI:
         self.mem_frame = tk.Frame(self.bottom_frame)
         self.mem_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
-        self.mem_header = tk.Text(self.mem_frame, height=1, width=60)
+        self.mem_header = tk.Text(self.mem_frame, height=1, width=55)
         self.mem_header.pack(fill=tk.X)
 
         header = "      " + " ".join(f"{i:02X}" for i in range(16))
@@ -120,7 +121,7 @@ class EmulatorUI:
         self.mem_view = tk.Text(
             self.mem_frame,
             height=16,
-            width=60,
+            width=55,
             yscrollcommand=mem_scroll.set,
             font=("Courier", 10)
         )
@@ -187,7 +188,7 @@ class EmulatorUI:
         # if self.loops == 600: print(self.loops*cycles_per_batch) # Imprime 12.000.000, deberia tardar ~10 segundos.
 
         # reprogramar próximo ciclo sin bloquear UI (da lugar para pescar interrupcones y botones)
-        self.loop_id =self.root.after(8, self.run_loop) # 8ms, es 125 veces por segundo
+        self.loop_id = self.root.after(8, self.run_loop) # 8ms, es 125 veces por segundo
 
 
     # Boton Step
@@ -199,32 +200,34 @@ class EmulatorUI:
         flags = f"[{'Z' if self.cpu.Z else '-'}{'N' if self.cpu.N else '-'}{'C' if self.cpu.CF else '-'}{'V' if self.cpu.V else '-'}{'I' if self.cpu.I else '-'}]"
 
         part1 = (
-            f"\n  Program Counter: 0x{self.cpu.PC:04X}\n"
-            f"  Stack Pointer:   0x{self.cpu.SP:04X}\n\n"
+            f"\n  PC: 0x{self.cpu.PC:04X}\n  SP: 0x{self.cpu.SP:04X}\n"
+            f"  FLAGS: {flags}\n\n"
             f"  Registers:\n"
             f"  A: 0x{self.cpu.A:02X}   0b{self.cpu.A:08b}\n"
             f"  B: 0x{self.cpu.B:02X}   0b{self.cpu.B:08b}\n"
             f"  C: 0x{self.cpu.C:02X}   0b{self.cpu.C:08b}\n"
             f"  D: 0x{self.cpu.D:02X}   0b{self.cpu.D:08b}\n\n"
-            f"  FLAGS: {flags}\n\n"
             f"  Next instruction:"
         )
 
         part2 = disassemble(self.cpu)
-        self.reg_label.config(text=part1 + "\n  0x" + part2)
+        self.reg_label.config(text=part1 + "\n  " + part2)
         # MEMORY VIEW
         self.update_memory_line(self.cpu.PC)
-            
+              
         if self.last_write is not None:
             self.update_memory_line(self.last_write)
             self.last_write = None
+        if self.cpu.last_write is not None:
+            self.update_memory_line(self.cpu.last_write)
+            self.cpu.last_write = None            
         # SCREEN
         self.update_screen()
 
 # Boton Reset
     def reset(self):
-        # Cancelar el afrer del loop 
-        self.root.after_cancel(self.loop_id)
+        # Cancelar el after del loop 
+        if self.loop_id: self.root.after_cancel(self.loop_id)
         # limpiar memoria
         self.memory.mem[:] = b'\x00' * 65536
         # reiniciar CPU
@@ -243,7 +246,7 @@ class EmulatorUI:
         self.build_memory_view()
         # marcar que no hay programa cargado y que frenar el CPU
         self.program_loaded = False
-        # self.loops = 0  # dor speed testing purposes
+        # self.loops = 0  # For speed testing purposes
         # actualizar UI
         self.update_views()
 
@@ -277,7 +280,7 @@ class EmulatorUI:
         # restaurar scroll real
         self.mem_view.see(top_index)
 
-# Pantalla, aca es donde la emulacion pierde performance con tkinter
+# Pantalla, aca es donde la emulacion puede perder performance con tkinter
     def update_screen(self):
         mem = self.mem
         base = 0x6000
@@ -356,7 +359,7 @@ class EmulatorUI:
         for j in range(0,len(segments)):
             for i in range(0,len(segments[j][1])):
                 if i % 16 == 0:
-                        print(f"\n{segments[j][0]+i:04X}:", end=" ")
+                    print(f"\n{segments[j][0]+i:04X}:", end=" ")
                 print(f"{mem[segments[j][0]+i]:02X}", end=" ", flush=True)
             print(f"   {len(segments[j][1])} bytes")
                 # El flush manda el texto inmediatamente a la salida, sin esperar que se llene el buffer
