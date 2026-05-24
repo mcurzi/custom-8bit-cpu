@@ -1,22 +1,14 @@
 ### 8-bit CPU Emulator - custom ISA
 ### v1.0
 
-### Clase de Memoria
-class Memory:
-    def __init__(self):
-        self.mem = bytearray(65536)  # 64 KB
-
-
-### CPU
 class CPU:
-    def __init__(self, memory: Memory): # Recibe instancia de Memory como input al ser creada
-        self.mem = memory.mem   #Referencia directa al bytearray para saltar el overhead de la clase Memory
+    def __init__(self, memory): # Recibe instancia de memoria como input al ser creada
+        self.mem = memory.mem   # Referencia directa al bytearray para saltar el overhead de la clase Memory
         self.memory = memory
         self.irq_pending = False
         self.nmi_pending = False
         self.nmi_line = False
         self.prev_nmi_line = False
-        self.last_write: int | None = None
 
         self.reset()  # reutiliza lógica, el reset apunta el PC directo al inicio del programa, no es un vector.
 
@@ -118,7 +110,6 @@ class CPU:
         self.SP = (self.SP - 1) & 0xFFFF
         addr = self.SP
         mem[addr] = val  # Escritura directa, no precisa el wrap & 0xFF porque es un bytearray
-        self.last_write = self.SP
 
     def pull8(self):
         val = self.mem[self.SP] # Lectura directa
@@ -337,7 +328,6 @@ class CPU:
                 cycles += 2
                 
                 mem[addr] = val
-                self.last_write = addr
 
         return cycles
 

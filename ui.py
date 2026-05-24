@@ -1,7 +1,6 @@
 # User interface basica para el emulador de CPU
 # v1
 
-#from cpu import CPU, Memory   
 from assembler import assemble
 from disassembler import disassemble
 import tkinter as tk
@@ -14,15 +13,18 @@ class EmulatorUI:
         self.cpu = cpu
         self.memory = memory
         self.mem = memory.mem
-        self.last_write = None
         self.timer = timer     # Timer externo para generar interrupcipnes
         self.use_nmi = False   # Con False, el timer se "conecta" las señal de IRQ, con True a NMI
+        self.frame_ready = False # Es para actualizar framebuffer con los tick del timer.
+        self.latched_buffer = bytearray(0x6000)  # 24 Kb, es para capturar la memoria y actualizar el fb
 
         # Simulación del reloj de CPU basada en ciclos por instrucción (frecuencia objetivo aproximada: 1.2 MHz)
-        self.cpu_hz = 1200000
+        self.cpu_hz = 2000000   # 2.0 MHz!
         self.seconds_per_cycle = 1.0 / self.cpu_hz
-        self.cycles_per_batch = 20000  # hace batches de esta cantidad de ciclos, luego chequea el tiempo transcurrido y ajusta velocidad
-        # self.loops = 0  # For speed testing purposes
+        self.cycles_per_batch = 20000 # This is at full speed, at less speed -> less cycles per batch
+        
+        # For speed testing purposes
+        #self.loops = 0  
         
         self.root.bind("<Key>", self.on_key_press) # Escuchar teclado
 
@@ -41,7 +43,19 @@ class EmulatorUI:
         self.editor = tk.Text(self.left_frame, height=40, width=80)
         self.editor.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
-        # Botones
+        # Control de velocidad
+        self.speed_frame = tk.Frame(self.left_frame)
+        self.speed_frame.pack(side=tk.TOP, fill=tk.X, pady=4)
+
+        tk.Label(self.speed_frame, text="Speed:").pack(side=tk.LEFT, padx=(5, 10))
+        self.speed = tk.DoubleVar(value=1.0)  # 1 es 100%
+
+        tk.Radiobutton(self.speed_frame, text="0.1%", variable=self.speed, value=0.001).pack(side=tk.LEFT)
+        tk.Radiobutton(self.speed_frame, text="1%", variable=self.speed, value=0.01).pack(side=tk.LEFT)
+        tk.Radiobutton(self.speed_frame, text="10%", variable=self.speed, value=0.1).pack(side=tk.LEFT)
+        tk.Radiobutton(self.speed_frame, text="100%", variable=self.speed, value=1.0).pack(side=tk.LEFT)
+
+        # Botones de control
         self.btn_frame = tk.Frame(self.left_frame)
         self.btn_frame.pack(side=tk.TOP, fill=tk.X)
         tk.Button(self.btn_frame, text="Asm/Load", command=self.load_program).pack(side=tk.LEFT)
@@ -75,7 +89,6 @@ class EmulatorUI:
                 )
                 row.append(rect)
             self.screen_rects.append(row)
-
 
         # BOTTOM: CONTENEDOR HORIZONTAL
         self.bottom_frame = tk.Frame(self.right_frame)
@@ -135,13 +148,23 @@ class EmulatorUI:
         # Actualiza en init para que se vean los registros desde el comienzo
         self.reg_label.config(text= " " + "\n" + " ") # Deja el espacio en blanco, el visor aparece con Run o Step
         self.update_views()
+        self.screen_loop()  # inicia el loop de refresh de la pantalla
+
+    # Boton Step
+    def step(self):
+        self.system_step()
+        self.update_views()
 
     def system_step(self):
         c = self.cpu.step()
         self.timer.update() # actualizar timer (tiempo real)
+        mem = self.mem
+        buffer = self.latched_buffer
 
         if self.timer.state:    # si hay una señal pendiente del timer
             self.timer.state = False
+            buffer[:] = mem[0x6000:0xC000]
+            self.frame_ready = True  # señal para render
 
             if self.use_nmi:
                 self.cpu.set_nmi_line(True)  # NMI dispara en la transición de FALSE a TRUE (flanco ascendente)
@@ -149,6 +172,12 @@ class EmulatorUI:
             else:
                 self.cpu.request_irq()
         return c
+
+    def screen_loop(self):
+        if self.frame_ready:
+            self.frame_ready = False
+            self.update_screen()
+        self.root.after(1, self.screen_loop)
 
     # Boton Run
     def run(self):
@@ -159,10 +188,15 @@ class EmulatorUI:
             self.cpu.running = False
 
     def run_loop(self):
-        cycles_per_batch = self.cycles_per_batch
-        seconds_per_cycle = self.seconds_per_cycle
+        speed = self.speed.get()
+        cycles_per_batch = self.cycles_per_batch * speed
+        seconds_per_cycle = self.seconds_per_cycle / speed
+        system_step = self.system_step
+        root_after = self.root.after
         running = self.cpu.running
-        if not running:         # Si la CPU está detenida (HLT), no ejecuta
+        hz = self.cpu_hz * speed
+        
+        if not running:         # Si la CPU está detenida (HLT o en pausa), no ejecuta
             self.update_views()
             return
 
@@ -171,32 +205,24 @@ class EmulatorUI:
 
         # Ejecutar CPU hasta alcanzar cierta cantidad de ciclos
         while cycles < cycles_per_batch:
-            c = self.system_step()   # ejecuta 1 instrucción
-            cycles += c                  # acumula ciclos
-
-        #self.update_views()  # refrescar UI
-        self.update_screen()  # Refresca solo framebuffer, ni memoria, ni registros ni desensamblado
+            c = system_step()   # ejecuta 1 instrucción
+            cycles += c         # acumula ciclos
 
         elapsed = time.perf_counter() - start_time     # tiempo real transcurrido, incluye update de framebuffer
         expected = cycles * seconds_per_cycle          # tiempo que debería haber tomado
 
         # Micropausa si va a más de los MHz deseados
-        if expected > (elapsed + 8): time.sleep(expected - elapsed) # 8ms es la pausa del root.afer()
+        if expected > (elapsed+0.01): time.sleep(expected - elapsed)  # Agregado de 10 ms reduce la cant de micropausas y el render mejora
 
-        # Calculo de velocidad, solo para test
-        # self.loops +=1
-        # if self.loops == 600: print(self.loops*cycles_per_batch) # Imprime 12.000.000, deberia tardar ~10 segundos.
+        # Estimaciones de velocidad, solo para test
+        #self.loops +=1
+        #if self.loops == hz//cycles_per_batch*10: print(hz/1000000) # Imprime los MHz objetivo, y deberia tardar ~10 segundos.
 
         # reprogramar próximo ciclo sin bloquear UI (da lugar para pescar interrupcones y botones)
-        self.loop_id = self.root.after(8, self.run_loop) # 8ms, es 125 veces por segundo
-
-
-    # Boton Step
-    def step(self):
-        self.system_step()
-        self.update_views()
+        self.loop_id = root_after(1, self.run_loop) # 1ms, cuanto menos mejor para mejorar los MHz
 
     def update_views(self):
+        mem = self.mem
         flags = f"[{'Z' if self.cpu.Z else '-'}{'N' if self.cpu.N else '-'}{'C' if self.cpu.CF else '-'}{'V' if self.cpu.V else '-'}{'I' if self.cpu.I else '-'}]"
 
         part1 = (
@@ -213,15 +239,9 @@ class EmulatorUI:
         part2 = disassemble(self.cpu)
         self.reg_label.config(text=part1 + "\n  " + part2)
         # MEMORY VIEW
-        self.update_memory_line(self.cpu.PC)
-              
-        if self.last_write is not None:
-            self.update_memory_line(self.last_write)
-            self.last_write = None
-        if self.cpu.last_write is not None:
-            self.update_memory_line(self.cpu.last_write)
-            self.cpu.last_write = None            
+        self.update_memory()      
         # SCREEN
+        self.latched_buffer[:] = mem[0x6000:0xC000]
         self.update_screen()
 
 # Boton Reset
@@ -246,15 +266,17 @@ class EmulatorUI:
         self.build_memory_view()
         # marcar que no hay programa cargado y que frenar el CPU
         self.program_loaded = False
-        # self.loops = 0  # For speed testing purposes
+
         # actualizar UI
         self.update_views()
+        
+        #self.loops = 0  # For speed testing purposes
 
-# Memory viewer, se ejecuta 1 sola vez al cargar el programa, despues update_view actualiza linas puntuales de memoria
+# Memory viewer, se ejecuta 1 sola vez al cargar el programa
     def build_memory_view(self):
         mem = self.mem
         self.mem_view.delete("1.0", tk.END)
-
+        
         for i in range(0x0000, 0x10000, 16):
             line = f"{i:04X}: "
             for j in range(16):
@@ -262,20 +284,17 @@ class EmulatorUI:
                 line += f"{val:02X} "
             self.mem_view.insert(tk.END, line + "\n")
             
-    def update_memory_line(self, addr):
+    def update_memory(self):
         mem = self.mem
-        base = addr & 0xFFF0
-        line_index = base // 16 + 1
-
         # guardar posición real del scroll
         top_index = self.mem_view.index("@0,0")
-
-        line = f"{base:04X}: "
-        for j in range(16):
-            val = mem[base + j]
-            line += f"{val:02X} "
-
-        self.mem_view.replace(f"{line_index}.0", f"{line_index}.end", line)
+        for i in range(0x0000, 0x10000, 16):
+            line_index = i // 16 + 1
+            line = f"{i:04X}: "
+            for j in range(16):
+                val = mem[i + j]
+                line += f"{val:02X} "
+            self.mem_view.replace(f"{line_index}.0", f"{line_index}.end", line)
 
         # restaurar scroll real
         self.mem_view.see(top_index)
@@ -283,8 +302,8 @@ class EmulatorUI:
 # Pantalla, aca es donde la emulacion puede perder performance con tkinter
     def update_screen(self):
         mem = self.mem
-        base = 0x6000
         prev = self.prev_screen
+        buffer = self.latched_buffer
 
         # Una lista es más rápida que un diccionario para índices numéricos
         PALETTE_16 = [
@@ -297,12 +316,12 @@ class EmulatorUI:
         rects = self.screen_rects
 
         for y in range(192):
-            y_offset = y * 128  # Precalculamos el offset de la fila
+            y_offset = y * 128  # Precalcula el offset de la fila
             rect_row = rects[y] # Referencia local a la fila de la matriz
 
             for x_byte in range(128):
                 idx = y_offset + x_byte
-                val = mem[base + idx]
+                val = buffer[idx]
 
                 if val != prev[idx]:
                     prev[idx] = val
@@ -324,15 +343,12 @@ class EmulatorUI:
         if char_code > 0:
             # Escribe el ASCII en RAM 0xC001
             mem[0xC001] = char_code & 0xFF
-            self.last_write = 0xC001
             
             #Pone el bit 7 en 1 ($80) en el registro de STATUS de 0xC000
             mem[0xC000] = 0x80
-            self.last_write = 0xC000
             
             # Activar si se quiere enviar interrupción, sino de usa por polling en el código ASM
             # self.cpu.request_irq()
-
 
 # Cargar el programa
     def load_program(self):
@@ -353,7 +369,6 @@ class EmulatorUI:
         self.program_loaded = True
         
         self.build_memory_view()
-        self.last_write = None
         
         # Muestra los segmentos programa en consola, solo para debug
         for j in range(0,len(segments)):

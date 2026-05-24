@@ -1,7 +1,8 @@
 # De acá se ejecuta el emulador con la UI.
 # Requiere cpu.py, assembler.py y disassembler.py
 
-from cpu import CPU, Memory   # Carga la CPU y memoria (clases en archivo aparte cpu.py)
+from cpu import CPU
+from memory import Memory 
 from ui import EmulatorUI     # ui.py, esta a su vez carga assembler.py y disassembler.py
 from timer import Timer  # o donde tengas definida la clase
 import tkinter as tk

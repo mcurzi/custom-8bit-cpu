@@ -13,7 +13,7 @@ A fully custom 8-bit CPU architecture designed and implemented from scratch in P
   <img src="demo.gif" width="650">
 </p>
 
-*Emulated execution at ~1.2 MHz, framebuffer at ~60 fps*
+*Emulated execution at ~2.0 MHz, framebuffer at ~60 fps*
 
 ---
 
