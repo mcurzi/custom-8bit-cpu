@@ -6,7 +6,6 @@ from disassembler import disassemble
 import tkinter as tk
 import time
 
-
 class EmulatorUI:
     def __init__(self, root, cpu, memory, timer):
         self.root = root
@@ -173,11 +172,6 @@ class EmulatorUI:
                 self.cpu.request_irq()
         return c
 
-    def screen_loop(self):
-        if self.frame_ready:
-            self.frame_ready = False
-            self.update_screen()
-        self.root.after(1, self.screen_loop)
 
     # Boton Run
     def run(self):
@@ -216,10 +210,16 @@ class EmulatorUI:
 
         # Estimaciones de velocidad, solo para test
         #self.loops +=1
-        #if self.loops == hz//cycles_per_batch*10: print(hz/1000000) # Imprime los MHz objetivo, y deberia tardar ~10 segundos.
+        #if self.loops == hz//cycles_per_batch*10: print(hz/1000000) # Imprime los MHz, deberia tardar ~10 seg.
 
         # reprogramar próximo ciclo sin bloquear UI (da lugar para pescar interrupcones y botones)
         self.loop_id = root_after(1, self.run_loop) # 1ms, cuanto menos mejor para mejorar los MHz
+
+    def screen_loop(self):
+        if self.frame_ready:
+            self.frame_ready = False
+            self.update_screen()
+        self.root.after(1, self.screen_loop)
 
     def update_views(self):
         mem = self.mem
@@ -246,10 +246,11 @@ class EmulatorUI:
 
 # Boton Reset
     def reset(self):
+        mem = self.mem
         # Cancelar el after del loop 
         if self.loop_id: self.root.after_cancel(self.loop_id)
         # limpiar memoria
-        self.memory.mem[:] = b'\x00' * 65536
+        mem[:] = b'\x00' * 65536
         # reiniciar CPU
         self.cpu.reset()
         # resetear "shadow buffer" de pantalla
@@ -354,7 +355,7 @@ class EmulatorUI:
     def load_program(self):
         mem = self.mem
         # reset
-        self.memory.mem[:] = b'\x00' * 65536
+        mem[:] = b'\x00' * 65536
         self.cpu.__init__(self.memory)
 
         #Ensamblar codigo
@@ -369,6 +370,7 @@ class EmulatorUI:
         self.program_loaded = True
         
         self.build_memory_view()
+        self.update_views()
         
         # Muestra los segmentos programa en consola, solo para debug
         for j in range(0,len(segments)):
