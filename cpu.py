@@ -2,15 +2,15 @@
 ### v1.0
 
 class CPU:
-    def __init__(self, memory): # Recibe instancia de memoria como input al ser creada
-        self.mem = memory.mem   # Referencia directa al bytearray para saltar el overhead de la clase Memory
+    def __init__(self, memory): # Requires Memory instance as an input
+        self.mem = memory.mem   # Direct reference to the bytearray to jump Memory class overhead
         self.memory = memory
         self.irq_pending = False
         self.nmi_pending = False
         self.nmi_line = False
         self.prev_nmi_line = False
 
-        self.reset()  # reutiliza lógica, el reset apunta el PC directo al inicio del programa, no es un vector.
+        self.reset()  # Reset method has most of the init attributes. There is no reset vector in this CPU. 
 
     def reset(self):
         # Registros
@@ -19,22 +19,19 @@ class CPU:
         self.C = 0
         self.D = 0
 
-        self.SP = 0xF000  # Stack pointer. El stack usa memoria justo antes del framebuffer ($6000). Va hacia atras, por eso no la pisa.
-
-        # Program counter inicia siempre en 0x100. El Z80 hace algo asi pero en 0x0000
-        self.PC = 0x0000   # Program counter, el reset lo ubica en $00, acá debe cargarse la primera instruccion
+        self.SP = 0xF000  # Stack pointer. By defult is located at 0xF0000 and it's pre-decrement, like 8080 or Z80.
+        self.PC = 0x0000  # Program counter, it starts at 0x0000 always on power on and reset. 
 
         # Flags
         self.Z = 0
         self.N = 0
         self.CF = 0
         self.V = 0
-        #self.B = 0  # Reservado para break flag
-        self.I = 1  # IRQ deshabilitadas por defecto
+        #self.B = 0  # Reserved, perhaps a future Break flag
+        self.I = 1   # I flag = 1 means IRQs disabled by default
 
         # control
         self.cc = 0
-        # Running, es para el debugger y para la UI
         self.running = False
 
     ### DC helpers (16-bit)
@@ -55,7 +52,7 @@ class CPU:
     def set_carry(self, cond):
         self.CF = int(cond)
 
-    def set_overflow_add(self, a, b, r):  #Detecta overflow con signo: 127 + 1 = -128, entonces V = 1
+    def set_overflow_add(self, a, b, r):  # Detects signed overflow: 127 + 1 = -128, so V = 1
         r = r & 0xFF
         self.V = 1 if ((a ^ r) & (b ^ r) & 0x80) else 0
 
@@ -63,12 +60,12 @@ class CPU:
         r = r & 0xFF
         self.V = int(((a ^ b) & (a ^ r) & 0x80) != 0)
 
-    # Agrupar/desagrupar flags en 1 byte
+    # Group/ungroup flags in 1 byte
     def pack_flags(self):
         byte = 0
         if self.N: byte |= (1 << 7)
         if self.V: byte |= (1 << 6)
-        byte |= (1 << 5) # Bit 5, no se usa, se fija en 1
+        byte |= (1 << 5) # Bit 5 is not used, set to 1
         if self.I: byte |= (1 << 2)
         if self.Z: byte |= (1 << 1)
         if self.CF: byte |= (1 << 0)
@@ -83,8 +80,7 @@ class CPU:
 
     ### Memory helpers optimizdos
     def read16(self, addr):
-        # Acceso directo al buffer mem
-        mem = self.mem
+        mem = self.mem      # Access to a local variable is much faster than access to an attribute.
         return mem[addr & 0xFFFF] | (mem[(addr + 1) & 0xFFFF] << 8)
 
     def compute_indexed(self, base, index, base_cycles):
@@ -105,11 +101,11 @@ class CPU:
 
     #Stack helpers
     def push8(self, val):    
-        mem = self.mem                #Versiones locales de variables de memoria son mas rapidas
+        mem = self.mem
 
         self.SP = (self.SP - 1) & 0xFFFF
         addr = self.SP
-        mem[addr] = val  # Escritura directa, no precisa el wrap & 0xFF porque es un bytearray
+        mem[addr] = val  # Direct writing, without a method. Does not need '& 0xFF' wrap beacuse mem is a bytearray
 
     def pull8(self):
         val = self.mem[self.SP] # Lectura directa
@@ -140,15 +136,16 @@ class CPU:
         self.prev_nmi_line = state
         self.nmi_line = state
 
-    # Adressing - OPTIMIZADO
+    # Adressing modes for ALU and MEMORY groups
+    # If/Elif blocks are faster than dictionaries and dispatch loops
     def resolve_address(self, bbb):
         mode = bbb
-        if mode == 0:  # inmediato
+        if mode == 0:  # immediate
             addr = self.PC
             self.PC += 1
             return addr, 1, 'imm'
 
-        if mode == 1:  # absoluto
+        if mode == 1:  # absolute
             addr = self.read16(self.PC)
             self.PC += 2
             return addr, 2, 'mem'
@@ -175,7 +172,7 @@ class CPU:
             addr = self.read16(ptr)
             return addr, 4, 'mem'
 
-        if mode == 6:  # [pointer] + B
+        if mode == 6:  # (pointer) + B
             ptr = self.read16(self.PC)
             self.PC += 2
             base = self.read16(ptr)
@@ -186,15 +183,15 @@ class CPU:
             base = self.get_dc()
             addr, cycles = self.compute_indexed(base, self.B, 3)
             return addr, cycles, 'mem'
-        else:
-            raise Exception("No se puede resolver la direccion")
 
+    # Fetch-Execute optimized wirh direct readings/writings to memory (not using methods)
     def fetch_operand(self, bbb):
+        mem = self.mem  
         addr, cycles, kind = self.resolve_address(bbb)
         if kind == 'imm':
-            return self.mem[addr], None, cycles # Lectura directa
+            return mem[addr], None, cycles
         else:
-            return self.mem[addr], addr, cycles # Lectura directa
+            return mem[addr], addr, cycles
 
     def step(self):
         if self.nmi_pending:
@@ -207,8 +204,7 @@ class CPU:
             self.handle_interrupt(0xFFFC)
             return 7
 
-        # Fetch-Execute OPTIMIZADO
-        opcode = self.mem[self.PC] # Lectura directa
+        opcode = self.mem[self.PC]
         self.PC = (self.PC + 1) & 0xFFFF
         aaa = (opcode >> 5) & 0b111
         bbb = (opcode >> 2) & 0b111
@@ -222,8 +218,6 @@ class CPU:
             cycles = self.exec_flow(aaa, bbb)
         elif self.cc == 0b11:
             cycles = self.exec_special(aaa, bbb)
-        else:
-            raise Exception("Opcode no implementado")
 
         return cycles
 
@@ -238,21 +232,21 @@ class CPU:
     def exec_alu(self, aaa, bbb):
         x, _, cycles = self.fetch_operand(bbb)
 
-        if aaa == 0: # ADC, add with carry, asegurar CLC antes para sumar sin carry
+        if aaa == 0: # ADC, add with carry. It requires CLC before for additions without carry
             r = self.A + x + self.CF
-            self.set_carry(r > 0xFF) # El carry se activa si el resultado total supera los 8 bits (255)
+            self.set_carry(r > 0xFF) # CF = 1 if the result is more than 8 bits (255 or 0xFF)
             r = r & 0xFF
-            self.set_overflow_add(self.A, x, r) # no incluye valor de CF.
-            self.A = r # Acceso directo a registro
+            self.set_overflow_add(self.A, x, r) # does not include the value of CF.
+            self.A = r
             self.update_zn(r)
             cycles += 2
 
-        elif aaa == 1:  # SBB, substract with borrow estilo Z80/8080 (no necesita SEC antes, asegurar CLC para restas sin borrow)
-            new_carry = (x + self.CF) > self.A # El Carry se activa si todo lo que se resta (x + CF) es mayor que A (hubo préstamo)
+        elif aaa == 1:  # SBB, substract with borrow, Z80/8080 style (does not need SEC before, but use CLC for operations w/o borrow)
+            new_carry = (x + self.CF) > self.A # Carry flag = 1 if the subthraend (x + CF) is larger than A (borrow)
             r = self.A - x - self.CF
-            r = r & 0xFF #asegurar que el registro sea de 8 bits
+            r = r & 0xFF # ensures that r is 8 bits
             self.set_carry(new_carry)
-            self.set_overflow_sub(self.A, x + self.CF, r) # Acá si el sustraendo incluye valor de CF.
+            self.set_overflow_sub(self.A, x + self.CF, r) # Here, by definition, the subtrahend includes CF value.
             self.A = r
             self.update_zn(r)
             cycles += 2
@@ -274,16 +268,16 @@ class CPU:
             self.update_zn(r)
             cycles += 1
 
-        elif aaa == 5:  # CMP (Compara A)
+        elif aaa == 5:  # CMP (Compare A with sth)
             r = self.A - x
-            r = r & 0xFF # Fuerza a 8 bits
+            r = r & 0xFF 
             self.Z = int((r & 0xFF) == 0)
             self.N = int((r & 0x80) != 0)
-            self.CF = int(self.A < x)      # 1 si hay préstamo (A < x), estilo 8080/Z80
-            self.set_overflow_sub(self.A, x, r) # CMP es resta pura, sin borrow implicito (el sustraendo es solo x, no x + CF)
+            self.CF = int(self.A < x)           # CF = 1 if there is borrow (A < x), this is 8080/Z80 style
+            self.set_overflow_sub(self.A, x, r) # CMP is substraction without implicit borrow (just x, not x + CF)
             cycles += 2
 
-        elif aaa == 6:  # CPB (Compara B)
+        elif aaa == 6:  # CPB (Compare B with sth)
             r = self.B - x
             r = r & 0xFF
             self.Z = int((r & 0xFF) == 0)
@@ -292,7 +286,7 @@ class CPU:
             self.set_overflow_sub(self.B, x, r)
             cycles += 2
 
-        elif aaa == 7:  # CPC (Compara C)
+        elif aaa == 7:  # CPC (Compare C with sth)
             r = self.C - x
             r = r & 0xFF
             self.Z = int((r & 0xFF) == 0)
@@ -302,10 +296,10 @@ class CPU:
             cycles += 2
         return cycles
 
-    ### MEMORY GROUP (CC=01) - OPTIMIZADO
+    ### MEMORY GROUP (CC=01)
     def exec_mem(self, aaa, bbb):
     
-        mem = self.mem   # Acceder a una variable local es mucho más rápido que acceder a un atributo.
+        mem = self.mem
 
         if aaa < 4:  # LOAD
             v, addr, cycles = self.fetch_operand(bbb)
@@ -316,9 +310,8 @@ class CPU:
             cycles += 2
         else:  # STORE
             if bbb == 0:
-                raise Exception("STORE no soporta inmediato")
+                raise Exception("STORE does not support inmediate mode")
             else:
-                # ESCRITURA DIRECTA AL BUFFER:
                 if aaa == 4: val = self.A
                 elif aaa == 5: val = self.B
                 elif aaa == 6: val = self.C
@@ -331,9 +324,8 @@ class CPU:
 
         return cycles
 
-    ### FLOW GROUP (CC=10) - OPTIMIZADO
+    ### FLOW GROUP (CC=10)
     def exec_flow(self, aaa, bbb):
-        # ... (lógica de cond intacta) ...
         if bbb == 0: cond = True
         elif bbb == 1: cond = bool(self.Z)
         elif bbb == 2: cond = not bool(self.Z)
@@ -344,7 +336,7 @@ class CPU:
         elif bbb == 7: cond = bool(self.V)
 
         if aaa == 2 or aaa == 3:
-            offset = self.mem[self.PC] # Lectura directa
+            offset = self.mem[self.PC]
             self.PC = (self.PC + 1) & 0xFFFF
             if offset & 0x80: offset -= 0x100
             if not cond: return 2
@@ -367,7 +359,7 @@ class CPU:
             self.unpack_flags(flags)
             self.PC = self.pull16()
             return 6
-        return 0
+        else: raise Exception(f"FLOW not implemented: aaa={aaa}, bbb={bbb}")
 
 ### SPECIAL GROUP (CC=11)
     def exec_special(self, aaa, bbb):
@@ -375,64 +367,54 @@ class CPU:
 
         if aaa == 0:  # MOV
             cycles = 2
-            if bbb == 0: # MOV A,B (origen, destino)
+            if bbb == 0: # MOV A,B (origin,destination)
                 self.B = self.A
                 self.update_zn(self.B)
-                return cycles
             elif bbb == 1:
                 self.C = self.A
                 self.update_zn(self.C)
-                return cycles
             if bbb == 2:
                 self.D = self.A
                 self.update_zn(self.D)
-                return cycles
-            elif bbb == 3: # MOV B,A (origen, destino)
+            elif bbb == 3: # MOV B,A
                 self.A = self.B
                 self.update_zn(self.A)
-                return cycles
             elif bbb == 4:
                 self.A = self.C
                 self.update_zn(self.A)
-                return cycles
             elif bbb == 5:
                 self.A = self.D
                 self.update_zn(self.A)
-                return cycles
             elif bbb == 6:
                 self.C = self.B
                 self.update_zn(self.C)
-                return cycles
             elif bbb == 7:
                 self.B = self.C
                 self.update_zn(self.B)
-                return cycles
-            else:
-                raise Exception(f"MOV inválido: bbb={bbb}")
 
         elif aaa == 1: # INC
-            if bbb == 4:  # [DC], incrementa 16 bits
+            if bbb == 4:  # [DC], increments 16 bits
                 val = (self.D << 8) | self.C
                 r = (val + 1) & 0xFFFF
                 self.C = r & 0xFF
                 self.D = (r >> 8) & 0xFF
-                # flags
-                self.N = int(((r & 0xFF) & 0x80) != 0) # Update N actualiza solo con low byte (C)
-                self.Z = int((r & 0xFFFF) == 0) # ZF se actualiza solo en DC = $0000. No se toca CF.
+                # update flags
+                self.N = int(((r & 0xFF) & 0x80) != 0) # N flag updates only with low byte (C)
+                self.Z = int((r & 0xFFFF) == 0) # ZF updates only with DC = $0000. CF is not updated.
                 cycles = 3
             else:
-                # Acceso directo por bbb sin pasar por reg_names
                 if bbb == 0: val = self.A; self.A = r = (val + 1) & 0xFF
                 elif bbb == 1: val = self.B; self.B = r = (val + 1) & 0xFF
                 elif bbb == 2: val = self.C; self.C = r = (val + 1) & 0xFF
                 elif bbb == 3: val = self.D; self.D = r = (val + 1) & 0xFF
+                else: raise Exception(f"SPECIAL not implemented: aaa={aaa}, bbb={bbb}")
 
                 self.set_overflow_add(val, 1, r)
                 self.update_zn(r)
                 cycles = 2
 
         elif aaa == 2: # DEC
-            if bbb == 4:  # [DC], decrementa 16 bits
+            if bbb == 4:  # [DC], decrements 16 bits
                 val = (self.D << 8) | self.C
                 r = (val - 1) & 0xFFFF
                 self.C = r & 0xFF
@@ -445,14 +427,15 @@ class CPU:
                 elif bbb == 1: val = self.B; self.B = r = (val - 1) & 0xFF
                 elif bbb == 2: val = self.C; self.C = r = (val - 1) & 0xFF
                 elif bbb == 3: val = self.D; self.D = r = (val - 1) & 0xFF
+                else: raise Exception(f"SPECIAL not implemented: aaa={aaa}, bbb={bbb}")
 
-                self.set_overflow_sub(val, 1, r) # en DEC, si bien es resta, CF no se usa para calcular V
+                self.set_overflow_sub(val, 1, r) # CF is not used to calculate V in DEC
                 self.update_zn(r)
                 cycles = 2
 
         elif aaa == 3:  # SHIFT / ROTATE
-            reg_idx = (bbb >> 2) & 0b1   # el bit de la izquierda define el registro
-            op = bbb & 0b11          # los 2 bits de la derecha definen la operacion
+            reg_idx = (bbb >> 2) & 0b1   # the left bit defines de register (A or B)
+            op = bbb & 0b11              # the 2 bits on the right define the operation
 
             dst_val = self.A if reg_idx == 0 else self.B
 
@@ -469,7 +452,7 @@ class CPU:
                 carry = dst_val & 1
                 v = ((dst_val >> 1) | (self.CF << 7)) & 0xFF
 
-            # Asignación de vuelta
+            # Set the result in the correct registry
             if reg_idx == 0: self.A = v
             else: self.B = v
 
@@ -484,9 +467,9 @@ class CPU:
                 elif bbb == 2: val = self.C; self.C = r = (0 - val) & 0xFF
                 elif bbb == 3: val = self.D; self.D = r = (0 - val) & 0xFF
 
-                # El V flag solo se activa si se intenta negar -128 (0x80)
+                # V flag is only activated if trying to do the negative of -128 (0x80)
                 self.V = (val == 0x80)
-                self.CF = (val != 0) # Carry es 1 si el valor original no era 0. Esto es porque se comporta como 0 - val.
+                self.CF = (val != 0) # CF = 1 if the original value is not 0, beacuse it behaves as 0 - val.
                 self.update_zn(r)
             elif bbb <= 7: # CLR
                 r = 0
@@ -496,16 +479,17 @@ class CPU:
                 elif bbb == 7: self.D = 0
 
                 self.update_zn(0)
-                self.V = 0  # Se fuerza V a 0, pero CF no se toca
+                self.V = 0  # V flag is forced to 0, but CF does not change
             cycles = 2
 
-        # Manipulacion de flags
+        # Flags control
         elif aaa == 5:
             if bbb == 0: self.CF = 0   # CLC
             elif bbb == 1: self.CF = 1 # SEC
             elif bbb == 2: self.V = 0  # CLV
             elif bbb == 4: self.I = 0  # CLI
             elif bbb == 5: self.I = 1  # SEI
+            else: raise Exception(f"SPECIAL not implemented: aaa={aaa}, bbb={bbb}")
             cycles = 2
 
         elif aaa == 6: # PUSH/PULL
@@ -532,22 +516,23 @@ class CPU:
                 self.unpack_flags(val)
 
         elif aaa == 7:
-            if bbb == 0:  # NOP (No Operación)
-                cycles = 1  # El NOP no hace nada, solo consume 1 ciclo
+            if bbb == 0:  # NOP (No OPeration)
+                cycles = 1  # Consumes 1 cycle
 
             elif bbb == 1:  # LSP, load stack pointer
-                # Optimización: lectura directa de memoria
                 self.SP = self.mem[self.PC] | (self.mem[(self.PC + 1) & 0xFFFF] << 8)
                 self.PC = (self.PC + 2) & 0xFFFF
                 cycles = 3
 
-            elif bbb == 2:  # HLT (Halt, pone la CPU en un 'bucle infinito', pero sin bloquear python)
+            elif bbb == 2:  # HLT, disables execution logic, without blocking python)
                 self.running = False
-                #raise StopIteration("CPU HALT")
-                self.PC = (self.PC - 1) & 0xFFFF # Esto es para trabar el PC en halt, asi el disassembler no muestra lo que sigue en memoria
+                # Keeps program counter in HLT instruction, this is not realistic, but it's used to prevent
+                # PC passing HLT instruction in cycle batches or with the Step button in the UI.
+                self.PC = (self.PC - 1) & 0xFFFF
                 cycles = 1
-        else:
-            raise Exception(f"SPECIAL no implementado: aaa={aaa}, bbb={bbb}")
+            
+            else:
+                raise Exception(f"SPECIAL not implemented: aaa={aaa}, bbb={bbb}")
 
         return cycles
 

@@ -1,21 +1,13 @@
-# Disassembler:
+# Custom CPU Disassembler
 
 ALU_NAMES = ["ADC", "SBB", "AND", "ORA", "XOR", "CMP", "CPB", "CPC"]
-
 LOAD_NAMES = ["LDA", "LDB", "LDC", "LDD", "STA", "STB", "STC", "STD"]
-
 FLOW_NAMES = ["JMP", "JSR", "BRA", "BSR", "RET", "RTI", "???", "???"]
-
 REG_NAMES = ["A", "B", "C", "D", "[DC]"]
-
 REG_REG_NAMES = ["A,B", "A,C", "A,D", "B,A", "C,A", "D,A", "B,C", "C,B"]
-
 COND_NAMES = ["UN", "ZF", "NZ", "NF", "NN", "CF", "NC", "VF"]
-
 SHIFT_NAMES = ["SHL A", "SHR A", "ROL A", "ROR A", "SHL B", "SHR B", "ROL B", "ROR B"]
-
 STACK_NAMES = ["PSH A", "PSH B", "PSH DC", "PSH FL", "PLL A", "PLL B", "PLL DC", "PLL FL"]
-
 
 def disassemble_at(mem, addr):
     op = mem[addr]
@@ -28,7 +20,7 @@ def disassemble_at(mem, addr):
     operand = ""
     size = 1
 
-    ### ALU y LOAD/STORE
+    ### ALU and LOAD/STORE groups
     if cc in [0,1]:
         ### ALU
         if cc == 0:
@@ -39,45 +31,38 @@ def disassemble_at(mem, addr):
 
         mode = bbb
 
-        if mode == 0:  # inmediato
+        if mode == 0:  # immediate
             val = mem[addr + 1]
             operand = f"#${val:02X}"
             size = 2
-
-        elif mode == 1:  # absoluto
+        elif mode == 1:  # absolute
             lo = mem[addr + 1]
             hi = mem[addr + 2]
             operand = f"${(hi<<8|lo):04X}"
             size = 3
-
-        elif mode == 2:  # abs,B
+        elif mode == 2:  # abs+B
             lo = mem[addr + 1]
             hi = mem[addr + 2]
-            operand = f"${(hi<<8|lo):04X},B"
+            operand = f"${(hi<<8|lo):04X}+B"
             size = 3
-
-        elif mode == 3:  # abs,C
+        elif mode == 3:  # abs+C
             lo = mem[addr + 1]
             hi = mem[addr + 2]
-            operand = f"${(hi<<8|lo):04X},C"
+            operand = f"${(hi<<8|lo):04X}+C"
             size = 3
-
         elif mode == 4:
             operand = "[DC]"
-            size = 1
-                
-        elif mode == 5: # ind
+            size = 1               
+        elif mode == 5: # (ptr)
             lo = mem[addr + 1]
             hi = mem[addr + 2]
             operand = f"(${(hi<<8|lo):04X})"
             size = 3
-
-        elif mode == 6: # ind,B
+        elif mode == 6: # (ptr)+B
             lo = mem[addr + 1]
             hi = mem[addr + 2]
-            operand = f"(${(hi<<8|lo):04X}),B"
+            operand = f"(${(hi<<8|lo):04X})+B"
             size = 3
-
         elif mode == 7:
             operand = "[DC+B]"
             size = 1
@@ -88,7 +73,7 @@ def disassemble_at(mem, addr):
         cond = COND_NAMES[bbb]
         mnemonic = base + " " + cond
 
-        # BRA/BSR relativo
+        # BRA/BSR relative
         if aaa in (2, 3):
             offset = mem[addr + 1]
             if offset & 0x80:
@@ -102,7 +87,7 @@ def disassemble_at(mem, addr):
             size = 1
             
         else:
-            # JMP/JSR absoluto
+            # JMP/JSR absolute
             lo = mem[addr + 1]
             hi = mem[addr + 2]
             operand = f"${(hi<<8|lo):04X}"
@@ -110,14 +95,12 @@ def disassemble_at(mem, addr):
 
     ### SPECIAL
     elif cc == 3:
-        #mnemonic = SPECIAL_NAMES[aaa]
 
         if aaa == 0: # MOV
             mnemonic = "MOV" + " " + REG_REG_NAMES[bbb]
             size = 1
 
-# INC (aaa=1) y DEC (aaa=3) usan tabla REG_NAMES para decodificar bbb.
-
+       # INC (aaa=1) and DEC (aaa=3) use REG_NAMES table to decode bbb.
         elif aaa == 1: # INC
             mnemonic = "INC" + " " + REG_NAMES[bbb]
             size = 1
@@ -165,7 +148,7 @@ def disassemble_at(mem, addr):
                 mnemonic = "HLT"
                 size = 1
 
-    ### BYTES STRING
+    ### Return operation bytes and disassembly string
     if size == 1:
         bytes_str = f"{op:02X}"
     elif size == 2:
@@ -174,7 +157,6 @@ def disassemble_at(mem, addr):
         bytes_str = f"{op:02X} {mem[addr+1]:02X} {mem[addr+2]:02X}"
 
     return f"0x{addr:04X}: {bytes_str:<8}\n          {mnemonic} {operand}", size
-
 
 def disassemble(cpu):
     line, size = disassemble_at(cpu.mem, cpu.PC)

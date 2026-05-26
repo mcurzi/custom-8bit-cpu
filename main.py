@@ -1,5 +1,5 @@
-# De acá se ejecuta el emulador con la UI.
-# Requiere cpu.py, assembler.py y disassembler.py
+
+# Requires cpu.py, memory.py, assembler.py, disassembler.py and timer.py
 
 from cpu import CPU
 from memory import Memory 
