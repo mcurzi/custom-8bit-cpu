@@ -88,12 +88,6 @@ class CPU:
         self.I = 1
         self.PC = self.read16(vector_addr)
 
-    def handle_interrupt(self, vector_addr):
-        self.push16(self.PC)
-        self.push8(self.pack_flags())
-        self.I = 1
-        self.PC = self.read16(vector_addr)
-
     def request_irq(self):
         self.irq_pending = True
 
@@ -300,10 +294,17 @@ class CPU:
             addr = self.read16(self.PC)
             self.PC = (self.PC + 2) & 0xFFFF
             if not cond: return 2
-            elif aaa == 0: self.PC = addr; return 3
-            elif aaa == 1: self.push16(self.PC); self.PC = addr; return 5
-        elif aaa == 4: self.PC = self.pull16(); return 5
-        elif aaa == 5:
+            elif aaa == 0:   # JMP
+                self.PC = addr
+                return 3
+            elif aaa == 1:   # JSR
+                self.push16(self.PC)
+                self.PC = addr
+                return 5
+        elif aaa == 4:   # RET
+            self.PC = self.pull16()
+            return 5
+        elif aaa == 5:   # RTI
             self.unpack_flags(self.pull8())
             self.PC = self.pull16()
             return 6
