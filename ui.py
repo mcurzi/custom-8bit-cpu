@@ -1,10 +1,11 @@
-# User interface basica para el emulador de CPU
-# v1
+# UI/screen/debugger for CPU emulator
+# v1.1
 
 from assembler import assemble
 from disassembler import disassemble
 import tkinter as tk
 import time
+from PIL import Image, ImageTk
 
 class EmulatorUI:
     def __init__(self, root, cpu, memory, timer):
@@ -25,8 +26,11 @@ class EmulatorUI:
         # For speed testing purposes
         #self.loops = 0  
         
-        self.root.bind("<Key>", self.on_key_press) # Escuchar teclado
+        self.root.bind("<KeyPress>", self.on_key_press) # Escuchar teclado
+        self.root.bind("<KeyRelease>", self.on_key_release)
 
+        self.tecla_activa_char = None
+        self.tecla_activa_keysym = None
         self.program_loaded = False
         self.loop_id = None
 
@@ -66,7 +70,7 @@ class EmulatorUI:
         self.right_frame = tk.Frame(root)
         self.right_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        # TOP: FRAMEBUFFER
+        ## TOP: FRAMEBUFFER con Pillow
         self.canvas = tk.Canvas(
             self.right_frame,
             width=256 * self.scale,
@@ -75,19 +79,11 @@ class EmulatorUI:
         )
         self.canvas.pack(side=tk.TOP)
 
-        # Este bloque crea la grilla de pixeles una sola vez. Después solo cambiaa colores
-        self.screen_rects = []  # Matriz 2D con el id interno de cada rectangulo ("pixel")
-        for y in range(192):
-            row = []
-            for x in range(256):
-                rect = self.canvas.create_rectangle(
-                    x * self.scale, y * self.scale,
-                    (x + 1) * self.scale, (y + 1) * self.scale,
-                    fill="black",
-                    outline=""  # Aparentemente sin outine es mas rapido porque no lo tiene que actualizar en cada frame
-                )
-                row.append(rect)
-            self.screen_rects.append(row)
+        self.img_pil = Image.new("RGB", (256, 192))
+        self.img_tk = ImageTk.PhotoImage(
+            self.img_pil.resize((256 * self.scale, 192 * self.scale), Image.NEAREST)
+        )
+        self.canvas.create_image((0, 0), image=self.img_tk, anchor="nw")
 
         # BOTTOM: CONTENEDOR HORIZONTAL
         self.bottom_frame = tk.Frame(self.right_frame)
@@ -139,6 +135,20 @@ class EmulatorUI:
         )
         self.mem_view.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
+        # Color list
+        self.palette = [
+            (0,0,0), (0,0,128), (0,128,0), (0,128,128),
+            (128,0,0), (128,0,128), (128,128,0), (192,192,192),
+            (128,128,128), (0,0,255), (0,255,0), (0,255,255),
+            (255,0,0), (255,0,255), (255,255,0), (255,255,255)
+        ]
+
+        # Precalculated color table: creates 6 bytes RGB for every posible byte value (1 byte = 2 pixels)
+        self.lookup_rgb = [
+            bytes(self.palette[(b >> 4) & 0x0F] + self.palette[b & 0x0F]) 
+            for b in range(256)
+        ]
+
         # Conectar scrollbar al Text
         mem_scroll.config(command=self.mem_view.yview)
         # Construye memoria una vez armado el wigget para verla
@@ -149,6 +159,8 @@ class EmulatorUI:
         self.update_views()
         self.screen_loop()  # inicia el loop de refresh de la pantalla
 
+
+
     # Boton Step
     def step(self):
         self.system_step()
@@ -158,11 +170,10 @@ class EmulatorUI:
         c = self.cpu.step()
         self.timer.update() # actualizar timer (tiempo real)
         mem = self.mem
-        buffer = self.latched_buffer
 
         if self.timer.state:    # si hay una señal pendiente del timer
             self.timer.state = False
-            buffer[:] = mem[0x6000:0xC000]
+            self.latched_buffer = bytearray(mem[0x6000:0xC000]) # Native copy in one memory acces
             self.frame_ready = True  # señal para render
 
             if self.use_nmi:
@@ -171,7 +182,6 @@ class EmulatorUI:
             else:
                 self.cpu.request_irq()
         return c
-
 
     # Boton Run
     def run(self):
@@ -216,7 +226,16 @@ class EmulatorUI:
         self.loop_id = root_after(1, self.run_loop) # 1ms, cuanto menos mejor para mejorar los MHz
 
     def screen_loop(self):
+        mem = self.mem
+        char = self.tecla_activa_char
         if self.frame_ready:
+            # This is to inject keys pressed into memory (independent from OS key autorepeat)
+            if char is not None:
+                char_code = ord(char) if len(char) == 1 else 0             
+                if char_code > 0:
+                    mem[0xC001] = char_code & 0xFF
+                    mem[0xC000] = 0x80            
+            
             self.frame_ready = False
             self.update_screen()
         self.root.after(1, self.screen_loop)
@@ -241,10 +260,10 @@ class EmulatorUI:
         # MEMORY VIEW
         self.update_memory()      
         # SCREEN
-        self.latched_buffer[:] = mem[0x6000:0xC000]
+        self.latched_buffer = bytearray(mem[0x6000:0xC000])
         self.update_screen()
 
-# Boton Reset
+    # Reset button
     def reset(self):
         mem = self.mem
         # Cancelar el after del loop 
@@ -255,14 +274,6 @@ class EmulatorUI:
         self.cpu.reset()
         # resetear "shadow buffer" de pantalla
         self.prev_screen = [0] * (128 * 192)
-        # limpiar canvas, pero sin destruirlo
-        for y in range(192):
-            for x in range(256):
-                self.canvas.itemconfig(
-                    self.screen_rects[y][x],
-                    fill="black",
-                    outline=""
-                )
         # reconstruir visor de memoria
         self.build_memory_view()
         # marcar que no hay programa cargado y que frenar el CPU
@@ -273,7 +284,7 @@ class EmulatorUI:
         
         #self.loops = 0  # For speed testing purposes
 
-# Memory viewer, se ejecuta 1 sola vez al cargar el programa
+    # Memory viewer, se ejecuta 1 sola vez al cargar el programa
     def build_memory_view(self):
         mem = self.mem
         self.mem_view.delete("1.0", tk.END)
@@ -300,58 +311,51 @@ class EmulatorUI:
         # restaurar scroll real
         self.mem_view.see(top_index)
 
-# Pantalla, aca es donde la emulacion puede perder performance con tkinter
+    # Pantalla, aca es donde la emulacion puede perder performance con tkinter
     def update_screen(self):
-        mem = self.mem
-        prev = self.prev_screen
-        buffer = self.latched_buffer
+        buf = self.latched_buffer   # The latched buffer prevents glitches from reading changing RAM
 
-        # Una lista es más rápida que un diccionario para índices numéricos
-        PALETTE_16 = [
-            "black", "navy", "green", "teal", "maroon", "purple", "olive", "silver",
-            "gray", "blue", "lime", "cyan", "red", "magenta", "yellow", "white"
-        ]
+        # Traslates all the buffer instantly using the pre-calcualted table
+        # This method uses an optimized implicit loop in C
+        rgb_bytes = b"".join(self.lookup_rgb[b] for b in buf)  # Pastes bytes toghether, with no separation ("")
 
-        # Referencias locales son mas rápidas en el loop
-        itemconfig = self.canvas.itemconfig
-        rects = self.screen_rects
-
-        for y in range(192):
-            y_offset = y * 128  # Precalcula el offset de la fila
-            rect_row = rects[y] # Referencia local a la fila de la matriz
-
-            for x_byte in range(128):
-                idx = y_offset + x_byte
-                val = buffer[idx]
-
-                if val != prev[idx]:
-                    prev[idx] = val
-
-                    # Extraemos colores
-                    c1 = PALETTE_16[(val >> 4) & 0x0F]
-                    c2 = PALETTE_16[val & 0x0F]
-
-                    # Actualizamos rectángulos (Solo relleno, sin tocar outline)
-                    x_base = x_byte << 1 # x_byte * 2
-                    itemconfig(rect_row[x_base], fill=c1)
-                    itemconfig(rect_row[x_base + 1], fill=c2)
+        # Creates RGB image directly
+        self.img_pil = Image.frombytes("RGB", (256, 192), rgb_bytes)
+        
+        if self.scale == 1:
+            self.img_tk.paste(self.img_pil)
+        else:
+            self.img_tk.paste(
+                self.img_pil.resize((256 * self.scale, 192 * self.scale), Image.NEAREST)
+            )
 
     def on_key_press(self, event):
-        mem = self.mem
-        # Obtiene el código ASCII de la tecla
-        char_code = ord(event.char) if len(event.char) == 1 else 0
+
+        self.tecla_activa_char = event.char
+        self.tecla_activa_keysym = event.keysym.lower()
         
-        if char_code > 0:
-            # Escribe el ASCII en RAM 0xC001
-            mem[0xC001] = char_code & 0xFF
+        #mem = self.mem
+        #self.keys_pressed[event.keysym.lower()] = True
+        
+        # Obtiene el código ASCII de la tecla
+        #char_code = ord(event.char) if len(event.char) == 1 else 0
+        
+        #if char_code > 0:
+        #    # Escribe el ASCII en RAM 0xC001
+        #    mem[0xC001] = char_code & 0xFF
             
             #Pone el bit 7 en 1 ($80) en el registro de STATUS de 0xC000
-            mem[0xC000] = 0x80
+        #    mem[0xC000] = 0x80
             
             # Activar si se quiere enviar interrupción, sino de usa por polling en el código ASM
             # self.cpu.request_irq()
 
-# Cargar el programa
+    def on_key_release(self, event):
+        if event.keysym.lower() == self.tecla_activa_keysym:
+            self.tecla_activa_char = None
+            self.tecla_activa_keysym = None
+        
+    # Cargar el programa
     def load_program(self):
         mem = self.mem
         # reset
