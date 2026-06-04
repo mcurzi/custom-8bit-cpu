@@ -1,8 +1,42 @@
-# 📑 Custom 8-bit ISA Reference
+# Custom 8-bit ISA Reference
 
-This document provides the official technical specification for the 8-bit CPU architecture. It covers instruction formats, register sets, addressing modes, and flag logic.
+This document provides the technical specification for the 8-bit CPU architecture. It covers instruction formats, register sets, addressing modes, and flag logic.
 
-## 🏗 General Format
+---
+
+## Registers
+| Register | Size | Description |
+| :--- | :--- | :--- |
+| **A** | 8-bit | Accumulator (Main ALU register) |
+| **B, C, D** | 8-bit | General Purpose |
+| **DC** | 16-bit | Data/Pointer Register (D = High, C = Low) |
+| **PC** | 16-bit | Program Counter |
+| **SP** | 16-bit | Stack Pointer |
+
+---
+
+## Status Flags
+The CPU maintains 5 status flags:
+
+1.  **Z (Zero)**: Set if the result is 0.
+2.  **N (Negative)**: Set if bit 7 of the result is 1.
+3.  **C (Carry)**: Set on unsigned overflow (addition) or borrow (subtraction).
+4.  **V (Overflow)**: Set on signed arithmetic overflow (two's complement).
+5.  **I (Interrupt Disable)**: Disables IRQs when set.
+
+---
+
+## Memory Map
+| Range | Function |
+| :--- | :--- |
+| `$0000 - $5FFF` | General purpose RAM  |
+| `$6000 - $BFFF` | Graphics Framebuffer (256x192 px, 2bpp)  |
+| `$C000 - $EFFF` | System RAM (stack, I/O, future runtime data) |
+| `$F000 - $FFFF` | System area (future boot and system code, vectors) |
+
+---
+
+## Instructions - General Format
 Each instruction has a base size of **1 byte**, plus additional operands where applicable.
 
 **Opcode Structure:** `AAA BBB CC`
@@ -14,18 +48,7 @@ Each instruction has a base size of **1 byte**, plus additional operands where a
 
 ---
 
-## 🗄 Registers
-| Register | Size | Description |
-| :--- | :--- | :--- |
-| **A** | 8-bit | Accumulator (Main ALU register) |
-| **B, C, D** | 8-bit | General Purpose |
-| **DC** | 16-bit | Data/Pointer Register (D = High, C = Low) |
-| **PC** | 16-bit | Program Counter |
-| **SP** | 16-bit | Stack Pointer |
-
----
-
-## 🛠 Instruction Groups
+## Instruction Groups
 
 ### Group 00: ALU (Arithmetic Logic Unit)
 Operations performed on the **A** accumulator.
@@ -46,8 +69,8 @@ Operations performed on the **A** accumulator.
 3. `abs+B`: Absolute indexed by B
 4. `abs+C`: Absolute indexed by C
 5. `[DC]`: Indirect via DC register (0 extra bytes)
-6. `($addr)`: Absolute Indirect (2 extra bytes)
-7. `($addr)+B`: Absolute Indirect post-indexed by B
+6. `(ptr)`: Absolute Indirect (2 extra bytes)
+7. `(ptr)+B`: Absolute Indirect post-indexed by B
 8. `[DC+B]`: Indirect via DC indexed by B
 
 ---
@@ -61,7 +84,7 @@ Data transfer between registers and memory.
 
 **Addressing (BBB):**
 * Same modes as the ALU group.
-* *Note: Immediate modes are only valid for LOAD operations.*
+* Immediate mode is only valid for LOAD operations.
 
 ---
 
@@ -77,7 +100,14 @@ Branching and subroutine instructions.
 * `101`: RTI (Return from Interrupt)
 
 **Conditions (BBB):**
-`000`: Always | `001`: Z | `010`: NZ | `011`: N | `100`: NN | `101`: C | `110`: NC | `111`: V
+* `000`: Unconditional, always (UN) 
+* `001`: If Z flag set (ZF) 
+* `010`: If Z flag clear (NZ)
+* `011`: If N flag set (NF)
+* `100`: If N flag clear (NN)
+* `101`: If C flag set (CF)
+* `110`: If F flag clear (NC)
+* `111`: If V flag set (VF)
 
 ---
 
@@ -86,37 +116,23 @@ Special operations and register manipulation.
 
 *   **MOV (AAA=000)**: Register-to-register transfer (BBB defines src/dest).
 *   **INC/DEC (AAA=001/010)**: Increment/Decrement A, B, C, D, or the 16-bit DC pair.
+*   **NEG/CLR (AAA=100)**: two's complement and Clear opcodes for A, B, C and D
+*   **FLAGS (AAA=101)**: CLC, SEC, CLV, CLI, SEI.
 *   **SHIFT/ROTATE (AAA=011)**: SHL, SHR, ROL, ROR on A or B.
 *   **STACK (AAA=110)**: PUSH/PULL for A, B, DC, or Flags.
 *   **SYS (AAA=111)**: NOP, LSP, HLT.
 
 ---
 
-## 🚩 Status Flags
-The CPU maintains 5 status flags:
-
-1.  **Z (Zero)**: Set if the result is 0.
-2.  **N (Negative)**: Set if bit 7 of the result is 1.
-3.  **C (Carry)**: Set on unsigned overflow (addition) or borrow (subtraction).
-4.  **V (Overflow)**: Set on signed arithmetic overflow (two's complement).
-5.  **I (Interrupt Disable)**: Disables IRQs when set.
-
 ### Flag Behavior by Instruction:
+The check mark indicates instructions were flags are updated
+
 | Instruction | Z | N | C | V |
 | :--- | :---: | :---: | :---: | :---: |
-| **ADD / SUB** | ✅ | ✅ | ✅ | ✅ |
-| **AND/OR/XOR**| ✅ | ✅ | - | - |
-| **LDA/LDB/MOV**| ✅ | ✅ | - | - |
-| **INC / DEC** | ✅ | ✅ | - | ✅ |
-| **CMP** | ✅ | ✅ | ✅ | - |
-
----
-
-## 💾 Memory Map
-| Range | Function |
-| :--- | :--- |
-| `$0000 - $5FFF` | General purpose RAM  |
-| `$6000 - $BFFF` |  **Graphics Framebuffer** (256x192 px, 2bpp)  |
-| `$C000 - $EFFF` | System RAM (stack, I/O, future runtime data) |
-| `$F000 - $FFFF` | System area (future boot and system code, vectors) |
+| **LDA/LDB/LDC/LDD/MOV**| ✔ | ✔ | - | - |
+| **ADC/SBB/NEG**| ✔ | ✔ | ✔ | ✔ |
+| **AND/OR/XOR**| ✔ | ✔ | - | - |
+| **INC/DEC/CLR**| ✔ | ✔ | - | ✔ |
+| **CMP/CPB/CPC**| ✔ | ✔ | ✔ | - |
+| **SHL/SHR/ROL/ROR**| ✔ | ✔ | ✔ | - |
 

@@ -209,9 +209,9 @@ A2    101 000 10    RTI
 2B    001 010 11    INC C
 2F    001 011 11    INC D
 33    001 100 11    INC DC
-37    001 101 11    (reservado)
-3B    001 110 11    (reservado)
-3F    001 111 11    (reservado)
+37    001 101 11    (reserved)
+3B    001 110 11    (reserved)
+3F    001 111 11    (reserved)
 
 -- DEC ---          
 43    010 000 11    DEC A
@@ -219,9 +219,9 @@ A2    101 000 10    RTI
 4B    010 010 11    DEC C
 4F    010 011 11    DEC D
 53    010 100 11    DEC DC
-57    010 101 11    (reservado)
-5B    010 110 11    (reservado)
-5F    010 111 11    (reservado)
+57    010 101 11    (reserved)
+5B    010 110 11    (reserved)
+5F    010 111 11    (reserved)
 
 -- SHIFT / ROTATE ---
 63    011 000 11    SHL A
